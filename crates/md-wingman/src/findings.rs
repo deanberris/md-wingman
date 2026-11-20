@@ -58,6 +58,9 @@ pub struct Finding {
     /// For claims: when they were checked (seconds since the Unix epoch).
     pub checked_at: u64,
     highlight: Option<TextDecorationCollection>,
+    /// For claims: earlier wordings, from edits accepted inside them, so
+    /// undoing the edit finds the claim again.
+    earlier: Vec<String>,
 }
 
 impl Finding {
@@ -84,6 +87,7 @@ impl Finding {
             run,
             checked_at: store::now(),
             highlight: None,
+            earlier: Vec::new(),
         }
     }
 
@@ -171,7 +175,7 @@ impl Workspace {
         self.findings.iter().find(|f| f.id == id)
     }
 
-    fn finding_mut(&mut self, id: u64) -> Option<&mut Finding> {
+    pub(crate) fn finding_mut(&mut self, id: u64) -> Option<&mut Finding> {
         self.findings.iter_mut().find(|f| f.id == id)
     }
 
@@ -223,7 +227,26 @@ impl Workspace {
             }
 
             let was_live = f.live;
-            match relocate(&text, &f.quote, f.anchor, REACH) {
+            let mut found = relocate(&text, &f.quote, f.anchor, REACH);
+            if found.is_none() {
+                // An edit inside a claim may have been undone.
+                if let Some((i, range)) = f
+                    .earlier
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, q)| relocate(&text, q, f.anchor, REACH).map(|r| (i, r)))
+                {
+                    let quote = f.earlier.remove(i);
+                    let current = std::mem::replace(&mut f.quote, quote);
+                    f.earlier.push(current);
+                    if let FindingKind::Claim(c) = &mut f.kind {
+                        c.quote = f.quote.clone();
+                    }
+                    claims_changed = true;
+                    found = Some(range);
+                }
+            }
+            match found {
                 Some(range) => {
                     f.anchor = range.start;
                     f.live = true;
@@ -309,11 +332,14 @@ impl Workspace {
             self.set_mode(ViewMode::Raw, window, cx);
         }
         let end = span.start + replacement.len();
+        let new_span = span.start..end;
         self.editor().update(cx, |state, cx| {
-            state.set_selected_range(span, cx);
+            state.set_selected_range(span.clone(), cx);
             state.replace(replacement, window, cx);
             state.set_selected_range(end..end, cx);
         });
+        let after = self.text(cx);
+        self.continuous_carry_over(&text, span, &after, new_span);
         true
     }
 
@@ -342,6 +368,32 @@ impl Workspace {
             self.reconcile_findings(cx);
             return;
         }
+        // Claims that contain the edited words follow the edit.
+        let text = self.text(cx);
+        let mut followers = Vec::new();
+        for f in self.findings.iter().filter(|f| f.is_claim() && f.visible()) {
+            let Some(r) = self.finding_range(f.id, cx) else {
+                continue;
+            };
+            let mut inside: Vec<&Insertion> = edits
+                .iter()
+                .filter(|e| r.start <= e.range.start && e.range.end <= r.end)
+                .collect();
+            if inside.is_empty() {
+                continue;
+            }
+            inside.sort_by_key(|e| std::cmp::Reverse(e.range.start));
+            let mut quote = text[r.clone()].to_string();
+            for e in inside {
+                quote.replace_range(e.range.start - r.start..e.range.end - r.start, &e.text);
+            }
+            let shift: isize = edits
+                .iter()
+                .filter(|e| e.range.end <= r.start)
+                .map(|e| e.text.len() as isize - e.range.len() as isize)
+                .sum();
+            followers.push((f.id, quote, r.start.saturating_add_signed(shift)));
+        }
         // Mark them first, so reconciling after the edit sees them accepted.
         for &id in &accepted {
             if let Some(f) = self.finding_mut(id) {
@@ -359,6 +411,21 @@ impl Workspace {
             }
             self.set_notice("Those edits overlap; accept them one at a time", cx);
             self.reconcile_findings(cx);
+            return;
+        }
+        if !followers.is_empty() {
+            for (id, quote, anchor) in followers {
+                if let Some(f) = self.finding_mut(id) {
+                    let old = std::mem::replace(&mut f.quote, quote);
+                    f.earlier.push(old);
+                    f.anchor = anchor;
+                    if let FindingKind::Claim(c) = &mut f.kind {
+                        c.quote = f.quote.clone();
+                    }
+                }
+            }
+            self.reconcile_findings(cx);
+            self.save_claims(cx);
         }
     }
 

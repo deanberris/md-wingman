@@ -36,6 +36,9 @@ pub struct TaskRun {
     summary: String,
     /// The findings this run produced.
     items: Vec<u64>,
+    /// Started by continuous mode: it has no card, and its findings go
+    /// straight to the document's lists.
+    background: bool,
     cancel: Option<Box<dyn Fn() + Send>>,
     _events: Option<Task<()>>,
 }
@@ -91,25 +94,31 @@ impl Workspace {
         let text = self.text(cx);
         let selection = self.editor().read(cx).selected_range();
         let passage = passage_range(&text, selection);
-        let passage_text = text[passage.clone()].to_string();
-        if passage_text.trim().is_empty() {
+        if text[passage.clone()].trim().is_empty() {
             self.set_notice("Select some text, or put the cursor in a paragraph", cx);
             return;
         }
+        self.start_run_on(kind, passage, false, cx);
+    }
+
+    /// Starts a task on a passage, and returns its run's id.
+    pub(crate) fn start_run_on(
+        &mut self,
+        kind: TaskKind,
+        passage: Range<usize>,
+        background: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<usize> {
+        let text = self.text(cx);
+        let passage_text = text.get(passage.clone())?.to_string();
         let context = (text.len() <= MAX_CONTEXT_BYTES).then_some(text.as_str());
-        let running =
-            match self
-                .assistant
-                .as_ref()
-                .expect("checked above")
-                .run(kind, &passage_text, context)
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    self.set_notice(e, cx);
-                    return;
-                }
-            };
+        let running = match self.assistant.as_ref()?.run(kind, &passage_text, context) {
+            Ok(r) => r,
+            Err(e) => {
+                self.set_notice(e, cx);
+                return None;
+            }
+        };
 
         let id = self.next_run_id;
         self.next_run_id += 1;
@@ -142,11 +151,48 @@ impl Workspace {
                 streamed: String::new(),
                 summary: String::new(),
                 items: Vec::new(),
+                background,
                 cancel: Some(running.cancel),
                 _events: Some(task),
             },
         );
         cx.notify();
+        Some(id)
+    }
+
+    pub(crate) fn run_passage(&self, id: usize) -> Option<Range<usize>> {
+        self.runs
+            .iter()
+            .find(|r| r.id == id)
+            .map(|r| r.passage.clone())
+    }
+
+    pub(crate) fn set_run_passage(&mut self, id: usize, passage: Range<usize>) {
+        if let Some(run) = self.run_mut(id) {
+            run.passage = passage;
+        }
+    }
+
+    pub(crate) fn cancel_run(&mut self, id: usize, cx: &mut Context<Self>) {
+        if let Some(cancel) = self.run_mut(id).and_then(|r| r.cancel.take()) {
+            cancel();
+        }
+        cx.notify();
+    }
+
+    /// A background run is done with: its findings join the document's
+    /// lists, and continuous mode moves on.
+    fn end_background_run(&mut self, id: usize, failure: Option<String>, cx: &mut Context<Self>) {
+        let Some(pos) = self.runs.iter().position(|r| r.id == id) else {
+            return;
+        };
+        let run = self.runs.remove(pos);
+        for fid in &run.items {
+            if let Some(f) = self.finding_mut(*fid) {
+                f.run = None;
+            }
+        }
+        self.continuous_run_ended(id, run.kind, failure, cx);
     }
 
     fn run_mut(&mut self, id: usize) -> Option<&mut TaskRun> {
@@ -165,9 +211,16 @@ impl Workspace {
                     run.state = RunState::Running(format!("{message}…"));
                 }
             }
-            Event::Done { text, data } => self.finish_run(id, text, data, cx),
+            Event::Done { text, data } => {
+                let failure = self.finish_run(id, text, data, cx);
+                if self.run_mut(id).is_some_and(|r| r.background) {
+                    self.end_background_run(id, failure, cx);
+                }
+            }
             Event::Error { message } => {
-                if let Some(run) = self.run_mut(id) {
+                if self.run_mut(id).is_some_and(|r| r.background) {
+                    self.end_background_run(id, Some(message), cx);
+                } else if let Some(run) = self.run_mut(id) {
                     run.cancel = None;
                     run.state = RunState::Failed(if message == "cancelled" {
                         "Cancelled".into()
@@ -187,11 +240,9 @@ impl Workspace {
         text: String,
         data: Option<serde_json::Value>,
         cx: &mut Context<Self>,
-    ) {
-        let Some(run) = self.runs.iter().find(|r| r.id == id) else {
-            return;
-        };
-        let (kind, passage) = (run.kind, run.passage.clone());
+    ) -> Option<String> {
+        let run = self.runs.iter().find(|r| r.id == id)?;
+        let (kind, passage, background) = (run.kind, run.passage.clone(), run.background);
         let doc = self.text(cx);
 
         // Turn the reply into findings, each with its text found in the document.
@@ -249,13 +300,31 @@ impl Workspace {
         let (summary, raw_items) = match parsed {
             Ok(v) => v,
             Err(e) => {
+                let message = format!("Couldn't read the reply: {e}");
                 if let Some(run) = self.run_mut(id) {
                     run.cancel = None;
-                    run.state = RunState::Failed(format!("Couldn't read the reply: {e}"));
+                    run.state = RunState::Failed(message.clone());
                 }
-                return;
+                return Some(message);
             }
         };
+
+        // A new check of a paragraph as you write replaces the suggestions
+        // from its last check.
+        if background && kind == TaskKind::CopyEdit {
+            let old: Vec<u64> = self
+                .findings
+                .iter()
+                .filter(|f| {
+                    matches!(f.kind, FindingKind::Edit(_))
+                        && f.run.is_none()
+                        && f.state == FindingState::Open
+                        && passage.contains(&f.anchor)
+                })
+                .map(|f| f.id)
+                .collect();
+            self.drop_findings(&old, cx);
+        }
 
         // A new fact-check of a passage replaces the old results for it.
         if kind == TaskKind::FactCheck {
@@ -302,6 +371,7 @@ impl Workspace {
             run.summary = if summary.is_empty() { text } else { summary };
             run.items = items;
         }
+        None
     }
 
     /// Closes a run's card. Its fact-checks stay with the text; its other
@@ -330,9 +400,17 @@ impl Workspace {
         let ready = matches!(self.service_status, ServiceStatus::Ready(_));
 
         let mut list = v_flex().gap_3().p_3();
-        if self.runs.is_empty() && !self.findings.iter().any(Finding::visible) {
+        let cards = self.runs.iter().filter(|r| !r.background).count();
+        if cards == 0 && !self.findings.iter().any(Finding::visible) {
             let message: SharedString = match &self.service_status {
                 ServiceStatus::Starting => "Starting the assistant…".into(),
+                ServiceStatus::Ready(_) if self.settings.continuous => format!(
+                    "Checking paragraphs as you write. Suggestions show up here when you pause.\n\nOr select a passage and choose an action above: {} copy-edit · {} fact-check · {} references",
+                    shortcut("E"),
+                    shortcut("⇧C"),
+                    shortcut("⇧R"),
+                )
+                .into(),
                 ServiceStatus::Ready(_) => format!(
                     "Select a passage, or put the cursor in a paragraph, then choose an action above.\n\n{} copy-edit · {} fact-check · {} references",
                     shortcut("E"),
@@ -359,8 +437,41 @@ impl Workspace {
                 }
             }
         }
-        for run in &self.runs {
+        for run in self.runs.iter().filter(|r| !r.background) {
             list = list.child(self.render_run(run, &theme, cx));
+        }
+        // Edits suggested while writing, in document order.
+        let mut written: Vec<&Finding> = self
+            .findings
+            .iter()
+            .filter(|f| matches!(f.kind, FindingKind::Edit(_)) && f.run.is_none() && f.visible())
+            .collect();
+        written.sort_by_key(|f| f.anchor);
+        if !written.is_empty() {
+            list = list.child(
+                h_flex()
+                    .justify_between()
+                    .items_center()
+                    .child(section_heading(
+                        &format!("Suggested as you write ({})", written.len()),
+                        &theme,
+                    ))
+                    .when(written.len() > 1, |d| {
+                        let ids: Vec<u64> = written.iter().map(|f| f.id).collect();
+                        d.child(
+                            Button::new("accept-written")
+                                .label("Accept all")
+                                .xsmall()
+                                .primary()
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.accept_edits(&ids, window, cx)
+                                })),
+                        )
+                    }),
+            );
+            for f in written {
+                list = list.child(self.render_finding("written", f, &theme, cx));
+            }
         }
         // Fact-checks kept with the text after their run's card was closed,
         // or saved from an earlier session.
@@ -416,6 +527,21 @@ impl Workspace {
                             .disabled(!ready)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.start_run(TaskKind::FindReferences, window, cx)
+                            })),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        Button::new("continuous")
+                            .label(if self.continuous.is_checking() {
+                                "As you write ●"
+                            } else {
+                                "As you write"
+                            })
+                            .small()
+                            .when(self.settings.continuous, |b| b.primary())
+                            .when(!self.settings.continuous, |b| b.ghost())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.set_continuous(!this.settings.continuous, cx)
                             })),
                     ),
             )
