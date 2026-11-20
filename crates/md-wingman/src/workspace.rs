@@ -52,6 +52,7 @@ pub struct Workspace {
     cursor_claims: Vec<u64>,
     /// The editor/assistant split.
     split: Entity<ResizableState>,
+    pub(crate) continuous: crate::continuous::Continuous,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -107,6 +108,7 @@ impl Workspace {
             next_finding_id: 1,
             cursor_claims: Vec::new(),
             split,
+            continuous: Default::default(),
             _subscriptions: subscriptions,
         };
         if let Some(path) = path {
@@ -156,6 +158,7 @@ impl Workspace {
                 window.set_window_title(&self.title());
             }
             self.reconcile_findings(cx);
+            self.continuous_edited(cx);
             cx.notify();
         }
     }
@@ -193,6 +196,7 @@ impl Workspace {
                 self.notice = None;
                 window.set_window_title(&self.title());
                 self.load_claims(cx);
+                self.continuous_baseline(cx);
                 cx.notify();
             }
             Err(e) => self.set_notice(format!("Couldn't open {}: {e}", path.display()), cx),
@@ -229,6 +233,7 @@ impl Workspace {
         self.editor
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.load_claims(cx);
+        self.continuous_baseline(cx);
         self.dirty = false;
         self.revision += 1;
         window.set_window_title(&self.title());
@@ -414,6 +419,13 @@ impl Workspace {
             .text_color(theme.muted_foreground)
             .child(format!("{words} words"))
             .child(div().flex_1().child(notice))
+            .when(self.settings.continuous, |d| {
+                d.child(if self.continuous.is_checking() {
+                    "Checking as you write…"
+                } else {
+                    "As you write: on"
+                })
+            })
             .child(self.service_status.label())
     }
 
@@ -468,6 +480,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_copy_edit))
             .on_action(cx.listener(Self::on_fact_check))
             .on_action(cx.listener(Self::on_find_references))
+            .on_action(cx.listener(Self::on_toggle_continuous))
             .size_full()
             .bg(background)
             .text_color(foreground)

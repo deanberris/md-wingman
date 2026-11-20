@@ -80,6 +80,18 @@ Findings stay with the text they are about. Edit around them and they follow it;
 
 Fact-checks are kept after you close their card. They are listed under "Fact-checks in this document", show up under "At the cursor" when you are in the claim's text, and are saved, so they are still there when you reopen the file. They are stored outside the document, in `~/Library/Application Support/md-wingman/fact-checks/`.
 
+### Checking as you write
+
+Turn on **As you write** (⇧⌘K, or the button at the top of the sidebar) and md-wingman copy-edits and fact-checks paragraphs on its own. It waits until you stop typing for a moment (3 seconds by default), so a burst of dictation is checked once rather than word by word. Then it checks one paragraph at a time and shows what it finds under "Suggested as you write" and "Fact-checks in this document".
+
+To keep requests down:
+
+- Only new or changed paragraphs are checked. What was already in the document when you turned it on or opened the file counts as checked, and the sidebar buttons check those paragraphs when you ask.
+- The paragraph you are writing is checked once it ends a sentence.
+- Headings, code, tables and short lines are skipped, and so is a blog post's front matter.
+- If you change a paragraph while it is being checked, that check is cancelled and redone after your next pause.
+- Accepting a suggestion doesn't count as a change that needs checking again.
+
 ### Keys
 
 | Keys | Action |
@@ -89,6 +101,7 @@ Fact-checks are kept after you close their card. They are listed under "Fact-che
 | ⌘E | Copy-edit the selection, or the paragraph under the cursor |
 | ⇧⌘C | Fact-check the selection, or the paragraph under the cursor |
 | ⇧⌘R | Find references for the selection, or the paragraph under the cursor |
+| ⇧⌘K | Check as you write, on or off |
 | ⌥⌘Q | Reflow the paragraph (or selection) to the ruler column |
 | ⌘Z / ⇧⌘Z | Undo / Redo |
 | ⌘Q | Quit |
@@ -104,14 +117,20 @@ divider, and you can edit it by hand. Missing fields take their defaults.
   "ruler_column": 120,
   "show_ruler": true,
   "wrap_at_ruler": true,
-  "assistant_fraction": 0.382
+  "assistant_fraction": 0.382,
+  "continuous": false,
+  "continuous_delay_ms": 3000,
+  "continuous_fact_check": true
 }
 ```
 
 `wrap_at_ruler` soft-wraps text at the ruler instead of at the window edge.
 `assistant_fraction` is the assistant pane's share of the window width. The
 default splits the window at the golden ratio, and dragging the divider
-changes it.
+changes it. `continuous` turns on checking as you write.
+`continuous_delay_ms` is how long typing must pause before a check. Set
+`continuous_fact_check` to `false` to copy-edit only, since fact-checks search
+the web and take longer.
 
 ### Try the assistant without the app
 

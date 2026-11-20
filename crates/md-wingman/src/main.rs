@@ -3,6 +3,7 @@
 //! Usage: md-wingman [FILE]
 
 mod assistant;
+mod continuous;
 mod document;
 mod findings;
 mod reflow;
@@ -33,6 +34,7 @@ actions!(
         CopyEdit,
         FactCheck,
         FindReferences,
+        ToggleContinuous,
         Quit
     ]
 );
@@ -66,6 +68,7 @@ fn main() {
                 KeyBinding::new(key!("shift-c"), FactCheck, None),
                 KeyBinding::new(key!("shift-r"), FindReferences, None),
                 KeyBinding::new(key!("alt-q"), Reflow, None),
+                KeyBinding::new(key!("shift-k"), ToggleContinuous, None),
                 KeyBinding::new(key!("q"), Quit, None),
             ]);
             cx.on_action(|_: &Quit, cx| cx.quit());
@@ -97,6 +100,8 @@ fn main() {
                     MenuItem::action("Copy-edit", CopyEdit),
                     MenuItem::action("Fact-check", FactCheck),
                     MenuItem::action("Find References", FindReferences),
+                    MenuItem::separator(),
+                    MenuItem::action("Check As You Write", ToggleContinuous),
                 ]),
             ]);
 
