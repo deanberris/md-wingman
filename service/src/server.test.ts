@@ -51,6 +51,9 @@ test("a task streams deltas then done", async () => {
   const deltas = c.events.filter((e) => e.id === "t1" && e.type === "delta").map((e) => (e as { text: string }).text);
   expect(deltas.length).toBeGreaterThan(1);
   expect(deltas.join("")).toBe((done as { text: string }).text);
+  expect((done as { data: { edits: unknown[] } }).data.edits).toEqual([
+    { original: "teh", replacement: "the", reason: "[fake] example fix" },
+  ]);
   c.close();
 });
 
@@ -65,7 +68,7 @@ test("bad requests get an error event", async () => {
 test("cancel stops a running task", async () => {
   const slow: Runner = async ({ signal }) => {
     await new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
-    return "never";
+    return { text: "never" };
   };
   const c = await connect(slow);
   c.send({ id: "s", type: "task", task: "fact_check", text: "The moon is cheese." });

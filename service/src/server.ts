@@ -57,7 +57,7 @@ export function startServer({ socketPath, runner, auth = "subscription", log = (
           onDelta: (text) => send(sock, { id: req.id, type: "delta", text }),
           onStatus: (message) => send(sock, { id: req.id, type: "status", message }),
         })
-          .then((text) => send(sock, { id: req.id, type: "done", text }))
+          .then(({ text, data }) => send(sock, { id: req.id, type: "done", text, data }))
           .catch((err: unknown) => {
             const message = ac.signal.aborted ? "cancelled" : err instanceof Error ? err.message : String(err);
             send(sock, { id: req.id, type: "error", message });

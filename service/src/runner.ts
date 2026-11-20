@@ -16,8 +16,13 @@ export interface RunInput {
   onStatus: (message: string) => void;
 }
 
-/** Runs one assistant task and resolves with the full reply text. */
-export type Runner = (input: RunInput) => Promise<string>;
+export interface RunResult {
+  text: string;
+  data?: unknown;
+}
+
+/** Runs one assistant task and resolves with its reply. */
+export type Runner = (input: RunInput) => Promise<RunResult>;
 
 // Claude Code needs a working directory. The tasks don't touch files, so give
 // them an empty one rather than wherever the service was started.
@@ -40,7 +45,7 @@ export const makeAgentRunner = (auth: AuthMode): Runner => {
 async function runAgent(
   { task, text, context, signal, onDelta, onStatus }: RunInput,
   env: Record<string, string | undefined>,
-): Promise<string> {
+): Promise<RunResult> {
   const spec = TASKS[task];
   const abortController = new AbortController();
   const onAbort = () => abortController.abort();
@@ -57,6 +62,7 @@ async function runAgent(
         // no one at a terminal to answer a permission prompt.
         permissionMode: "dontAsk",
         maxTurns: spec.maxTurns,
+        outputFormat: spec.schema ? { type: "json_schema", schema: spec.schema } : undefined,
         model: process.env.WINGMAN_MODEL || undefined,
         pathToClaudeCodeExecutable: resolveClaudePath(),
         includePartialMessages: true,
@@ -79,15 +85,21 @@ async function runAgent(
         } else if (ev.type === "content_block_start" && ev.content_block.type === "server_tool_use") {
           onStatus(`Using ${ev.content_block.name}`);
         } else if (ev.type === "content_block_start" && ev.content_block.type === "tool_use") {
-          onStatus(`Using ${ev.content_block.name}`);
+          // StructuredOutput is how the final answer is delivered, not a step to report.
+          onStatus(ev.content_block.name === "StructuredOutput" ? "Writing up" : `Using ${ev.content_block.name}`);
         }
       } else if (msg.type === "result") {
-        if (msg.subtype === "success") return msg.result || streamed;
-        throw new Error(`Claude stopped early (${msg.subtype})`);
+        if (msg.subtype !== "success") throw new Error(`Claude stopped early (${msg.subtype})`);
+        if (spec.schema) {
+          if (msg.structured_output === undefined) throw new Error("Claude didn't return a structured reply");
+          const data = msg.structured_output as { summary?: unknown };
+          return { text: typeof data.summary === "string" ? data.summary : "", data };
+        }
+        return { text: msg.result || streamed };
       }
     }
     if (signal.aborted) throw new Error("cancelled");
-    return streamed;
+    return { text: streamed };
   } finally {
     signal.removeEventListener("abort", onAbort);
   }
@@ -105,5 +117,35 @@ export const fakeRunner: Runner = async ({ task, text, signal, onDelta, onStatus
     onDelta(word);
     await Bun.sleep(5);
   }
-  return reply;
+  return { text: reply, data: fakeData(task, text) };
 };
+
+/** Canned structured replies, so the app's suggestion UI can be exercised offline. */
+function fakeData(task: TaskKind, text: string): unknown {
+  if (task === "copy_edit") {
+    const fixes: Array<[string, string]> = [
+      ["teh", "the"],
+      ["Their are", "There are"],
+      ["it were", "it was"],
+    ];
+    const edits = fixes
+      .filter(([original]) => text.includes(original))
+      .map(([original, replacement]) => ({ original, replacement, reason: "[fake] example fix" }));
+    return { summary: `[fake] ${edits.length} suggested edits`, edits };
+  }
+  if (task === "fact_check") {
+    const first = text.split(/(?<=[.!?])\s/)[0]?.trim() ?? text;
+    return {
+      summary: "[fake] one claim checked",
+      claims: [
+        {
+          quote: first,
+          verdict: "unverifiable",
+          explanation: "[fake] This is a canned reply from WINGMAN_FAKE=1.",
+          sources: [{ title: "Example source", url: "https://example.com" }],
+        },
+      ],
+    };
+  }
+  return undefined;
+}

@@ -42,7 +42,14 @@ export type Event =
     }
   | { id: string; type: "delta"; text: string }
   | { id: string; type: "status"; message: string }
-  | { id: string; type: "done"; text: string }
+  | {
+      id: string;
+      type: "done";
+      /** The reply as Markdown, or a one-line summary when `data` is set. */
+      text: string;
+      /** The structured reply, for tasks that have a schema (see tasks.ts). */
+      data?: unknown;
+    }
   | { id: string; type: "error"; message: string };
 
 export function parseRequest(line: string): Request | { error: string; id?: string } {

@@ -83,6 +83,14 @@ fn main() -> ExitCode {
             let _ = std::io::stdout().flush();
         }
         Event::Status { message } => eprintln!("\n[{message}]"),
+        Event::Done {
+            data: Some(data), ..
+        } => {
+            println!(
+                "\n{}",
+                serde_json::to_string_pretty(data).unwrap_or_default()
+            );
+        }
         _ => {}
     });
     println!();

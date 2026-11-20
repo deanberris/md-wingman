@@ -288,7 +288,7 @@ impl Task {
         for event in self.events.iter() {
             on_event(&event);
             match event {
-                Event::Done { text } => return Ok(text),
+                Event::Done { text, .. } => return Ok(text),
                 Event::Error { message } => return Err(message),
                 _ => {}
             }

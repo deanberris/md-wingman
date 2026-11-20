@@ -28,7 +28,7 @@ pub struct Workspace {
     focus_handle: FocusHandle,
     editor: Entity<EditorState>,
     document: Document,
-    mode: ViewMode,
+    pub(crate) mode: ViewMode,
     /// Bumped on every edit, so the preview re-renders from fresh text.
     revision: usize,
     dirty: bool,
@@ -36,6 +36,8 @@ pub struct Workspace {
     pub(crate) service_status: ServiceStatus,
     /// A message for the status bar, such as a save error.
     notice: Option<SharedString>,
+    pub(crate) runs: Vec<crate::runs::TaskRun>,
+    pub(crate) next_run_id: usize,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -62,6 +64,8 @@ impl Workspace {
             assistant: None,
             service_status: ServiceStatus::Starting,
             notice: None,
+            runs: Vec::new(),
+            next_run_id: 1,
             _subscriptions: subscriptions,
         };
         if let Some(path) = path {
@@ -124,7 +128,7 @@ impl Workspace {
         format!("{}{dirty} — md-wingman", self.document.display_name())
     }
 
-    fn set_notice(&mut self, notice: impl Into<SharedString>, cx: &mut Context<Self>) {
+    pub(crate) fn set_notice(&mut self, notice: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.notice = Some(notice.into());
         cx.notify();
     }
@@ -242,7 +246,7 @@ impl Workspace {
         );
     }
 
-    fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
         self.mode = mode;
         match mode {
             ViewMode::Raw => self.editor.update(cx, |state, cx| state.focus(window, cx)),
@@ -388,23 +392,6 @@ impl Workspace {
             )
             .child(div().flex_1().min_h_0().child(body))
     }
-
-    fn render_sidebar_body(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = cx.theme();
-        let message: SharedString = match &self.service_status {
-            ServiceStatus::Starting => "Starting the assistant…".into(),
-            ServiceStatus::Ready(_) => {
-                "Select a passage, then ask for a copy-edit, a fact-check or references.".into()
-            }
-            ServiceStatus::Failed(e) => e.clone().into(),
-        };
-        div()
-            .p_4()
-            .text_sm()
-            .text_color(theme.muted_foreground)
-            .child(message)
-            .into_any_element()
-    }
 }
 
 impl Focusable for Workspace {
@@ -426,6 +413,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_save))
             .on_action(cx.listener(Self::on_save_as))
             .on_action(cx.listener(Self::on_toggle_preview))
+            .on_action(cx.listener(Self::on_copy_edit))
+            .on_action(cx.listener(Self::on_fact_check))
             .size_full()
             .bg(background)
             .text_color(foreground)

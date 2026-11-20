@@ -3,8 +3,8 @@
 A native macOS Markdown editor with Claude always on hand in a sidebar, to
 fact-check what you write, find references for it, and suggest copy edits.
 
-> **Status: early development.** The editor and the assistant service work.
-> The assistant features are being added to the sidebar.
+> **Status: early development.** The editor, copy-editing and fact-checking
+> work. Reference lookup is next.
 
 ## What it is meant to be
 
@@ -72,12 +72,18 @@ scripts/dev.sh notes/draft.md   # or open a file
 
 The first build takes a few minutes. md-wingman uses your Claude subscription by default and ignores any `ANTHROPIC_API_KEY` in your environment. To use an API key instead, run `WINGMAN_AUTH=api_key scripts/dev.sh`. The status bar shows which one is in use.
 
+### Using the assistant
+
+Select a passage, or just put the cursor in a paragraph, then press ⌘E to copy-edit or ⇧⌘C to fact-check (the buttons at the top of the sidebar do the same). Suggested edits are underlined in the text and listed in the sidebar, where you can accept or dismiss each one, or accept them all. Fact-checked claims are shaded by verdict and come with sources. Click a card to jump to its text. Set `WINGMAN_FAKE=1` to try the flow with canned replies, without calling Claude.
+
 ### Keys
 
 | Keys | Action |
 |---|---|
 | ⌘N / ⌘O / ⌘S / ⇧⌘S | New / Open / Save / Save As |
 | ⌘P | Switch between raw Markdown and the preview |
+| ⌘E | Copy-edit the selection, or the paragraph under the cursor |
+| ⇧⌘C | Fact-check the selection, or the paragraph under the cursor |
 | ⌘Q | Quit |
 
 ### Try the assistant without the app
