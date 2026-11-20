@@ -311,12 +311,17 @@ impl Workspace {
 
         // A new check of a paragraph as you write replaces the suggestions
         // from its last check.
-        if background && kind == TaskKind::CopyEdit {
+        if background && kind != TaskKind::FactCheck {
             let old: Vec<u64> = self
                 .findings
                 .iter()
                 .filter(|f| {
-                    matches!(f.kind, FindingKind::Edit(_))
+                    let same_kind = match f.kind {
+                        FindingKind::Edit(_) => kind == TaskKind::CopyEdit,
+                        FindingKind::Reference(_) => kind == TaskKind::FindReferences,
+                        FindingKind::Claim(_) => false,
+                    };
+                    same_kind
                         && f.run.is_none()
                         && f.state == FindingState::Open
                         && passage.contains(&f.anchor)
@@ -400,6 +405,41 @@ impl Workspace {
         let ready = matches!(self.service_status, ServiceStatus::Ready(_));
 
         let mut list = v_flex().gap_3().p_3();
+        if let Some(panel) = self.render_key_panel(&theme, cx) {
+            list = list.child(panel);
+        }
+        if self.settings.continuous {
+            let jev = self.settings.jev_prefilter;
+            list = list.child(
+                h_flex()
+                    .gap_2()
+                    .items_center()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(div().flex_1().child(if jev {
+                        format!(
+                            "Jev grades each paragraph first; acting above {:.0}%.",
+                            self.settings.jev_threshold * 100.
+                        )
+                    } else {
+                        "Every changed paragraph is checked.".to_string()
+                    }))
+                    .child(
+                        Button::new("jev-toggle")
+                            .label(if jev {
+                                "Jev pre-filter: on"
+                            } else {
+                                "Jev pre-filter: off"
+                            })
+                            .xsmall()
+                            .when(jev, |b| b.primary())
+                            .when(!jev, |b| b.outline())
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.set_jev_prefilter(!jev, window, cx)
+                            })),
+                    ),
+            );
+        }
         let cards = self.runs.iter().filter(|r| !r.background).count();
         if cards == 0 && !self.findings.iter().any(Finding::visible) {
             let message: SharedString = match &self.service_status {
@@ -440,13 +480,18 @@ impl Workspace {
         for run in self.runs.iter().filter(|r| !r.background) {
             list = list.child(self.render_run(run, &theme, cx));
         }
-        // Edits suggested while writing, in document order.
+        // Edits and references found while writing, in document order.
         let mut written: Vec<&Finding> = self
             .findings
             .iter()
-            .filter(|f| matches!(f.kind, FindingKind::Edit(_)) && f.run.is_none() && f.visible())
+            .filter(|f| !f.is_claim() && f.run.is_none() && f.visible())
             .collect();
         written.sort_by_key(|f| f.anchor);
+        let written_edits: Vec<u64> = written
+            .iter()
+            .filter(|f| matches!(f.kind, FindingKind::Edit(_)))
+            .map(|f| f.id)
+            .collect();
         if !written.is_empty() {
             list = list.child(
                 h_flex()
@@ -456,8 +501,8 @@ impl Workspace {
                         &format!("Suggested as you write ({})", written.len()),
                         &theme,
                     ))
-                    .when(written.len() > 1, |d| {
-                        let ids: Vec<u64> = written.iter().map(|f| f.id).collect();
+                    .when(written_edits.len() > 1, |d| {
+                        let ids = written_edits.clone();
                         d.child(
                             Button::new("accept-written")
                                 .label("Accept all")

@@ -6,7 +6,7 @@
 //! document is opened, the paragraphs already there count as checked: it
 //! follows what you write, and the sidebar buttons check the rest on demand.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
 use std::time::{Duration, Instant};
@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use gpui_kit::*;
 use wingman_client::TaskKind;
 
+use crate::jev::{self, Grades, JevError};
 use crate::suggestions::relocate;
 use crate::workspace::Workspace;
 use crate::ToggleContinuous;
@@ -30,6 +31,18 @@ pub struct Continuous {
     last_edit: Option<Instant>,
     /// The background run in flight, and the text it was sent.
     running: Option<(usize, String)>,
+    /// Jev's grades, by paragraph fingerprint.
+    grades: HashMap<u64, Grades>,
+    /// The paragraph Jev is grading.
+    grading: Option<u64>,
+    _grading_task: Option<Task<()>>,
+    /// The TypeSafe key, once read from the Keychain.
+    jev_key: Option<Option<String>>,
+    /// Set when Jev can't be used until the key changes.
+    jev_blocked: bool,
+    /// After Jev says it's busy: wait until then, backing off each time.
+    retry_at: Option<Instant>,
+    backoff: Duration,
 }
 
 impl Continuous {
@@ -38,7 +51,30 @@ impl Continuous {
     }
 
     pub fn is_checking(&self) -> bool {
-        self.running.is_some()
+        self.running.is_some() || self.grading.is_some()
+    }
+
+    pub fn is_grading(&self) -> bool {
+        self.grading.is_some()
+    }
+
+    /// The TypeSafe key changed: use it from now on.
+    pub fn key_changed(&mut self, key: Option<String>) {
+        self.jev_key = Some(key);
+        self.jev_blocked = false;
+        self.retry_at = None;
+        self.backoff = Duration::ZERO;
+    }
+
+    pub fn has_key(&mut self) -> bool {
+        self.key().is_ok_and(|k| k.is_some())
+    }
+
+    fn key(&mut self) -> Result<Option<String>, String> {
+        if self.jev_key.is_none() {
+            self.jev_key = Some(jev::load_key()?);
+        }
+        Ok(self.jev_key.clone().flatten())
     }
 
     fn mark(&mut self, kind: TaskKind, text: &str) {
@@ -56,6 +92,14 @@ impl Continuous {
                 self.mark(kind, &text[range.clone()]);
             }
         }
+    }
+}
+
+fn grade_for(grades: &Grades, kind: TaskKind) -> f32 {
+    match kind {
+        TaskKind::CopyEdit => grades.copy_edit,
+        TaskKind::FactCheck => grades.fact_check,
+        TaskKind::FindReferences => grades.references,
     }
 }
 
@@ -181,6 +225,11 @@ impl Workspace {
         if self.settings.continuous_fact_check {
             kinds.push(TaskKind::FactCheck);
         }
+        // References only with the pre-filter: they're worth a request only
+        // for paragraphs that make citable claims.
+        if self.settings.jev_prefilter {
+            kinds.push(TaskKind::FindReferences);
+        }
         kinds
     }
 
@@ -239,7 +288,10 @@ impl Workspace {
     }
 
     fn schedule_continuous(&mut self, cx: &mut Context<Self>) {
-        let delay = self.delay();
+        self.schedule_continuous_at(self.delay(), cx);
+    }
+
+    fn schedule_continuous_at(&mut self, delay: Duration, cx: &mut Context<Self>) {
         self.continuous.timer = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(delay).await;
             let _ = this.update(cx, |this, cx| this.continuous_tick(cx));
@@ -275,12 +327,50 @@ impl Workspace {
         if let Some(p) = current.filter(|p| finished(&text[p.clone()])) {
             candidates.push(p);
         }
-        let next = candidates.into_iter().find_map(|p| {
-            kinds
+        if self.settings.jev_prefilter {
+            if self.continuous.jev_blocked {
+                return;
+            }
+            if let Some(at) = self.continuous.retry_at {
+                if at > Instant::now() {
+                    self.schedule_continuous_at(at - Instant::now(), cx);
+                    return;
+                }
+            }
+        }
+        let threshold = self.settings.jev_threshold;
+        let mut next = None;
+        for p in candidates {
+            let paragraph = &text[p.clone()];
+            let pending: Vec<TaskKind> = kinds
                 .iter()
-                .find(|&&k| !self.continuous.is_checked(k, &text[p.clone()]))
-                .map(|&k| (k, p))
-        });
+                .copied()
+                .filter(|&k| !self.continuous.is_checked(k, paragraph))
+                .collect();
+            if pending.is_empty() {
+                continue;
+            }
+            if !self.settings.jev_prefilter {
+                next = Some((pending[0], p));
+                break;
+            }
+            // Grade it first, then act only on what scores above the bar.
+            let fp = fingerprint(paragraph);
+            let Some(grades) = self.continuous.grades.get(&fp).copied() else {
+                self.start_grading(fp, paragraph.to_string(), cx);
+                return;
+            };
+            for k in pending {
+                if grade_for(&grades, k) > threshold {
+                    next = Some((k, p.clone()));
+                    break;
+                }
+                self.continuous.mark(k, paragraph);
+            }
+            if next.is_some() {
+                break;
+            }
+        }
         let Some((kind, passage)) = next else {
             return;
         };
@@ -340,7 +430,11 @@ impl Workspace {
         };
         let old = overlapping(before, &span);
         let new = overlapping(after, &new_span);
-        for kind in [TaskKind::CopyEdit, TaskKind::FactCheck] {
+        for kind in [
+            TaskKind::CopyEdit,
+            TaskKind::FactCheck,
+            TaskKind::FindReferences,
+        ] {
             if !old.is_empty()
                 && old
                     .iter()
@@ -351,6 +445,76 @@ impl Workspace {
                 }
             }
         }
+    }
+}
+
+impl Workspace {
+    fn start_grading(&mut self, fp: u64, paragraph: String, cx: &mut Context<Self>) {
+        let key = match self.continuous.key() {
+            Ok(Some(key)) => key,
+            Ok(None) => {
+                self.continuous.jev_blocked = true;
+                self.set_notice(
+                    "The Jev pre-filter needs a TypeSafe API key: Assistant ▸ Set TypeSafe API Key…",
+                    cx,
+                );
+                return;
+            }
+            Err(e) => {
+                self.continuous.jev_blocked = true;
+                self.set_notice(
+                    format!("Couldn't read the TypeSafe key from the Keychain: {e}"),
+                    cx,
+                );
+                return;
+            }
+        };
+        let model = self.settings.jev_model.clone();
+        self.continuous.grading = Some(fp);
+        let grading = cx
+            .background_executor()
+            .spawn(async move { jev::grade(&key, &model, &paragraph) });
+        self.continuous._grading_task = Some(cx.spawn(async move |this, cx| {
+            let result = grading.await;
+            let _ = this.update(cx, |this, cx| this.grading_done(fp, result, cx));
+        }));
+        cx.notify();
+    }
+
+    fn grading_done(&mut self, fp: u64, result: Result<Grades, JevError>, cx: &mut Context<Self>) {
+        self.continuous.grading = None;
+        self.continuous._grading_task = None;
+        match result {
+            Ok(grades) => {
+                self.continuous.grades.insert(fp, grades);
+                self.continuous.backoff = Duration::ZERO;
+                self.continuous.retry_at = None;
+                self.set_notice(format!("Jev: {}", grades.summary()), cx);
+                self.continuous_tick(cx);
+            }
+            Err(JevError::BadKey) => {
+                self.continuous.jev_blocked = true;
+                self.set_notice(
+                    "TypeSafe didn't accept the API key. Set it again: Assistant ▸ Set TypeSafe API Key…",
+                    cx,
+                );
+            }
+            Err(e) => {
+                let backoff = (self.continuous.backoff * 2)
+                    .clamp(Duration::from_secs(5), Duration::from_secs(120));
+                let wait = match &e {
+                    JevError::Busy {
+                        retry_after: Some(secs),
+                    } => Duration::from_secs(*secs).max(backoff),
+                    _ => backoff,
+                };
+                self.continuous.backoff = backoff;
+                self.continuous.retry_at = Some(Instant::now() + wait);
+                self.set_notice(format!("{e}; trying again in {}s", wait.as_secs()), cx);
+                self.schedule_continuous_at(wait, cx);
+            }
+        }
+        cx.notify();
     }
 }
 

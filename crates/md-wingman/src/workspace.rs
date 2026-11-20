@@ -53,6 +53,8 @@ pub struct Workspace {
     /// The editor/assistant split.
     split: Entity<ResizableState>,
     pub(crate) continuous: crate::continuous::Continuous,
+    /// The TypeSafe key panel, while it's open.
+    pub(crate) key_input: Option<Entity<gpui_kit::component::input::InputState>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -109,6 +111,7 @@ impl Workspace {
             cursor_claims: Vec::new(),
             split,
             continuous: Default::default(),
+            key_input: None,
             _subscriptions: subscriptions,
         };
         if let Some(path) = path {
@@ -420,10 +423,17 @@ impl Workspace {
             .child(format!("{words} words"))
             .child(div().flex_1().child(notice))
             .when(self.settings.continuous, |d| {
-                d.child(if self.continuous.is_checking() {
-                    "Checking as you write…"
+                d.child(if self.continuous.is_grading() {
+                    "Grading with Jev…".to_string()
+                } else if self.continuous.is_checking() {
+                    "Checking as you write…".to_string()
+                } else if self.settings.jev_prefilter {
+                    format!(
+                        "As you write: on · Jev > {:.0}%",
+                        self.settings.jev_threshold * 100.
+                    )
                 } else {
-                    "As you write: on"
+                    "As you write: on".to_string()
                 })
             })
             .child(self.service_status.label())
@@ -481,6 +491,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_fact_check))
             .on_action(cx.listener(Self::on_find_references))
             .on_action(cx.listener(Self::on_toggle_continuous))
+            .on_action(cx.listener(Self::on_toggle_jev))
+            .on_action(cx.listener(Self::on_set_jev_key))
             .size_full()
             .bg(background)
             .text_color(foreground)
