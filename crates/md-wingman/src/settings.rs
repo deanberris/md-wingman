@@ -26,6 +26,13 @@ pub struct Settings {
     /// Also fact-check in the background, not just copy-edit. Fact-checks
     /// search the web, so they take longer and use more of your plan.
     pub continuous_fact_check: bool,
+    /// Grade paragraphs with Jev first, and check only what scores above
+    /// the threshold. The TypeSafe key is kept in the Keychain.
+    pub jev_prefilter: bool,
+    /// The score (0 to 1) a grade must be above to act on.
+    pub jev_threshold: f32,
+    /// The Jev model, pinned so grades stay consistent.
+    pub jev_model: String,
 }
 
 impl Default for Settings {
@@ -38,6 +45,9 @@ impl Default for Settings {
             continuous: false,
             continuous_delay_ms: 3000,
             continuous_fact_check: true,
+            jev_prefilter: false,
+            jev_threshold: 0.66,
+            jev_model: "jev-1.14.0".into(),
         }
     }
 }
@@ -86,6 +96,12 @@ impl Settings {
             self.assistant_fraction = Settings::default().assistant_fraction;
         }
         self.continuous_delay_ms = self.continuous_delay_ms.clamp(500, 60_000);
+        if !(0.0..=1.0).contains(&self.jev_threshold) {
+            self.jev_threshold = Settings::default().jev_threshold;
+        }
+        if self.jev_model.trim().is_empty() {
+            self.jev_model = Settings::default().jev_model;
+        }
         self
     }
 }

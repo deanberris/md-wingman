@@ -6,6 +6,8 @@ mod assistant;
 mod continuous;
 mod document;
 mod findings;
+mod jev;
+mod prefilter;
 mod reflow;
 mod ruler;
 mod runs;
@@ -35,6 +37,8 @@ actions!(
         FactCheck,
         FindReferences,
         ToggleContinuous,
+        ToggleJevPrefilter,
+        SetJevKey,
         Quit
     ]
 );
@@ -102,6 +106,8 @@ fn main() {
                     MenuItem::action("Find References", FindReferences),
                     MenuItem::separator(),
                     MenuItem::action("Check As You Write", ToggleContinuous),
+                    MenuItem::action("Jev Pre-filter", ToggleJevPrefilter),
+                    MenuItem::action("Set TypeSafe API Key…", SetJevKey),
                 ]),
             ]);
 

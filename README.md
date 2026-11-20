@@ -92,6 +92,12 @@ To keep requests down:
 - If you change a paragraph while it is being checked, that check is cancelled and redone after your next pause.
 - Accepting a suggestion doesn't count as a change that needs checking again.
 
+### Jev pre-filter
+
+With [Jev](https://docs.typesafe.ai), TypeSafe's scoring model, checking as you write spends Claude requests only where they are needed. Before checking a paragraph, md-wingman asks Jev to grade how much it needs a copy-edit, a fact-check and references. It acts only on grades above 66%, and that includes finding references, which it doesn't do without Jev. Grading a paragraph costs a fraction of a cent. The status bar shows the latest grades.
+
+Turn it on with the **Jev pre-filter** button in the sidebar, or from Assistant ▸ Jev Pre-filter. The first time, it asks for your TypeSafe API key ([console.typesafe.ai/keys](https://console.typesafe.ai/keys)). The key is stored in your macOS Keychain under "md-wingman", never in the settings file. To change or remove it, use Assistant ▸ Set TypeSafe API Key…. If TypeSafe rejects the key, checking pauses until you set a new one. If Jev is busy, it waits and tries again.
+
 ### Keys
 
 | Keys | Action |
@@ -120,7 +126,10 @@ divider, and you can edit it by hand. Missing fields take their defaults.
   "assistant_fraction": 0.382,
   "continuous": false,
   "continuous_delay_ms": 3000,
-  "continuous_fact_check": true
+  "continuous_fact_check": true,
+  "jev_prefilter": false,
+  "jev_threshold": 0.66,
+  "jev_model": "jev-1.14.0"
 }
 ```
 
@@ -130,7 +139,8 @@ default splits the window at the golden ratio, and dragging the divider
 changes it. `continuous` turns on checking as you write.
 `continuous_delay_ms` is how long typing must pause before a check. Set
 `continuous_fact_check` to `false` to copy-edit only, since fact-checks search
-the web and take longer.
+the web and take longer. `jev_threshold` is the grade, from 0 to 1, that a
+paragraph must score above for the pre-filter to act on it.
 
 ### Try the assistant without the app
 
