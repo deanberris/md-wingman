@@ -4,10 +4,12 @@
 
 mod assistant;
 mod document;
+mod findings;
 mod reflow;
 mod ruler;
 mod runs;
 mod settings;
+mod store;
 mod suggestions;
 mod workspace;
 

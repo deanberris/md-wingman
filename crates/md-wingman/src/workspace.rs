@@ -41,10 +41,15 @@ pub struct Workspace {
     pub(crate) assistant: Option<Assistant>,
     pub(crate) service_status: ServiceStatus,
     /// A message for the status bar, such as a save error.
-    notice: Option<SharedString>,
+    pub(crate) notice: Option<SharedString>,
     pub(crate) runs: Vec<crate::runs::TaskRun>,
     pub(crate) next_run_id: usize,
     pub(crate) settings: Settings,
+    pub(crate) findings: Vec<crate::findings::Finding>,
+    pub(crate) next_finding_id: u64,
+    /// The fact-checks under the cursor at the last look, to re-render the
+    /// sidebar only when they change.
+    cursor_claims: Vec<u64>,
     /// The editor/assistant split.
     split: Entity<ResizableState>,
     _subscriptions: Vec<Subscription>,
@@ -64,6 +69,15 @@ impl Workspace {
         let split = cx.new(|_| ResizableState::default());
         let subscriptions = vec![
             cx.subscribe_in(&editor, window, Self::on_editor_event),
+            // The editor doesn't announce cursor moves, so watch it for the
+            // sidebar's "at the cursor" section.
+            cx.observe(&editor, |this, _, cx| {
+                let claims = this.claims_at_cursor(cx);
+                if claims != this.cursor_claims {
+                    this.cursor_claims = claims;
+                    cx.notify();
+                }
+            }),
             cx.subscribe(&split, |this, split, _: &ResizablePanelEvent, cx| {
                 // Remember the assistant pane's share of the width.
                 let sizes = split.read(cx).sizes().clone();
@@ -89,6 +103,9 @@ impl Workspace {
             runs: Vec::new(),
             next_run_id: 1,
             settings,
+            findings: Vec::new(),
+            next_finding_id: 1,
+            cursor_claims: Vec::new(),
             split,
             _subscriptions: subscriptions,
         };
@@ -138,12 +155,17 @@ impl Workspace {
                 self.dirty = dirty;
                 window.set_window_title(&self.title());
             }
+            self.reconcile_findings(cx);
             cx.notify();
         }
     }
 
     pub(crate) fn text(&self, cx: &App) -> String {
         self.editor.read(cx).value().to_string()
+    }
+
+    pub(crate) fn document_path(&self) -> Option<PathBuf> {
+        self.document.path().map(PathBuf::from)
     }
 
     pub(crate) fn editor(&self) -> &Entity<EditorState> {
@@ -170,6 +192,7 @@ impl Workspace {
                 self.revision += 1;
                 self.notice = None;
                 window.set_window_title(&self.title());
+                self.load_claims(cx);
                 cx.notify();
             }
             Err(e) => self.set_notice(format!("Couldn't open {}: {e}", path.display()), cx),
@@ -178,8 +201,13 @@ impl Workspace {
 
     fn save_to(&mut self, path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         let text = self.text(cx);
+        let moved = path.is_some();
         match self.document.save(&text, path.as_deref()) {
             Ok(()) => {
+                if moved {
+                    // Fact-checks follow the document to its new name.
+                    self.save_claims(cx);
+                }
                 self.dirty = false;
                 self.notice = Some(format!("Saved {}", self.document.display_name()).into());
                 window.set_window_title(&self.title());
@@ -200,6 +228,7 @@ impl Workspace {
         self.document = Document::untitled();
         self.editor
             .update(cx, |state, cx| state.set_value("", window, cx));
+        self.load_claims(cx);
         self.dirty = false;
         self.revision += 1;
         window.set_window_title(&self.title());

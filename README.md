@@ -76,6 +76,10 @@ The first build takes a few minutes. md-wingman uses your Claude subscription by
 
 Select a passage, or just put the cursor in a paragraph, then press ⌘E to copy-edit, ⇧⌘C to fact-check or ⇧⌘R to find references (the buttons at the top of the sidebar do the same). Suggested edits are underlined in the text and listed in the sidebar, where you can accept or dismiss each one, or accept them all. Fact-checked claims are shaded by verdict and come with sources. Each reference can be cited right after the claim it backs, as a footnote (with the full citation added at the end of the document) or as an inline link. Click a card to jump to its text. Set `WINGMAN_FAKE=1` to try the flow with canned replies, without calling Claude.
 
+Findings stay with the text they are about. Edit around them and they follow it; delete the text and they disappear, and undo brings them back. Accepting edits, alone or all at once, is a single step that ⌘Z takes back, suggestions included.
+
+Fact-checks are kept after you close their card. They are listed under "Fact-checks in this document", show up under "At the cursor" when you are in the claim's text, and are saved, so they are still there when you reopen the file. They are stored outside the document, in `~/Library/Application Support/md-wingman/fact-checks/`.
+
 ### Keys
 
 | Keys | Action |
