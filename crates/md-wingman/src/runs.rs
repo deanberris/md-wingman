@@ -16,10 +16,11 @@ use wingman_client::{Event, TaskKind};
 
 use crate::assistant::{task_title, ServiceStatus};
 use crate::suggestions::{
-    locate_all, passage_range, Claim, CopyEditReply, EditSuggestion, FactCheckReply, Verdict,
+    footnote_citation, link_citation, locate_all, passage_range, Claim, CopyEditReply,
+    EditSuggestion, FactCheckReply, Insertion, Reference, ReferencesReply, Relation, Verdict,
 };
 use crate::workspace::{ViewMode, Workspace};
-use crate::{CopyEdit, FactCheck};
+use crate::{CopyEdit, FactCheck, FindReferences};
 
 /// Send the whole document as context only when it is reasonably small.
 const MAX_CONTEXT_BYTES: usize = 40_000;
@@ -56,6 +57,7 @@ struct RunItem {
 enum ItemKind {
     Edit(EditSuggestion),
     Claim(Claim),
+    Reference(Reference),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,6 +92,25 @@ fn verdict_color(verdict: Verdict) -> Hsla {
     }
 }
 
+fn relation_color(relation: Relation) -> Hsla {
+    match relation {
+        Relation::Supports => hsla(0.38, 0.6, 0.4, 1.),
+        Relation::Challenges => hsla(0.0, 0.75, 0.5, 1.),
+        Relation::Background => hsla(0.6, 0.5, 0.5, 1.),
+    }
+}
+
+fn reference_style() -> HighlightStyle {
+    HighlightStyle {
+        underline: Some(UnderlineStyle {
+            thickness: px(1.),
+            color: Some(hsla(0.6, 0.6, 0.5, 0.8)),
+            wavy: false,
+        }),
+        ..Default::default()
+    }
+}
+
 fn claim_style(verdict: Verdict) -> HighlightStyle {
     HighlightStyle {
         background_color: Some(verdict_color(verdict).opacity(0.18)),
@@ -105,6 +126,15 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.start_run(TaskKind::CopyEdit, window, cx);
+    }
+
+    pub(crate) fn on_find_references(
+        &mut self,
+        _: &FindReferences,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.start_run(TaskKind::FindReferences, window, cx);
     }
 
     pub(crate) fn on_fact_check(
@@ -269,7 +299,22 @@ impl Workspace {
                         .collect();
                     (r.summary, items)
                 }),
-            TaskKind::FindReferences => Ok((String::new(), Vec::new())),
+            TaskKind::FindReferences => data
+                .ok_or_else(|| "No references came back".to_string())
+                .and_then(|d| {
+                    serde_json::from_value::<ReferencesReply>(d).map_err(|e| e.to_string())
+                })
+                .map(|r| {
+                    let items = r
+                        .references
+                        .into_iter()
+                        .map(|r| {
+                            let quote = r.quote.clone();
+                            (ItemKind::Reference(r), quote, reference_style())
+                        })
+                        .collect();
+                    (r.summary, items)
+                }),
         };
 
         let (summary, raw_items) = match parsed {
@@ -283,9 +328,28 @@ impl Workspace {
             }
         };
 
-        let ranges = locate_all(&doc, raw_items.iter().map(|(_, q, _)| q.as_str()), &passage);
+        let ranges = if kind == TaskKind::FindReferences {
+            // Several sources can back the same claim, so they may share a match.
+            raw_items
+                .iter()
+                .map(|(_, q, _)| locate_all(&doc, [q.as_str()], &passage).pop().flatten())
+                .collect()
+        } else {
+            locate_all(&doc, raw_items.iter().map(|(_, q, _)| q.as_str()), &passage)
+        };
+        // A reference whose claim can't be found is cited after the passage.
+        let passage_intact = doc
+            .get(passage.clone())
+            .is_some_and(|p| !p.trim().is_empty());
         let mut items = Vec::new();
-        for ((kind, _, style), range) in raw_items.into_iter().zip(ranges) {
+        for ((mut kind, _, mut style), mut range) in raw_items.into_iter().zip(ranges) {
+            if let ItemKind::Reference(r) = &mut kind {
+                if range.is_none() && passage_intact {
+                    r.quote = doc[passage.clone()].to_string();
+                    range = Some(passage.clone());
+                    style = HighlightStyle::default();
+                }
+            }
             let highlight = range.map(|range| {
                 self.editor().update(cx, |state, cx| {
                     state.create_decorations_collection(vec![TextDecoration::new(range, style)], cx)
@@ -320,6 +384,7 @@ impl Workspace {
         let expected = match &item.kind {
             ItemKind::Edit(e) => &e.original,
             ItemKind::Claim(c) => &c.quote,
+            ItemKind::Reference(r) => &r.quote,
         };
         let text = self.editor().read(cx).value();
         (text.get(range.clone()) == Some(expected.as_str())).then_some(range)
@@ -410,6 +475,52 @@ impl Workspace {
         }
     }
 
+    /// Cites a reference after the claim it backs, as an inline link or a
+    /// footnote.
+    fn insert_reference(
+        &mut self,
+        run: usize,
+        item: usize,
+        footnote: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(range) = self.item_range(run, item, cx) else {
+            self.set_item_state(run, item, ItemState::Stale, cx);
+            return;
+        };
+        let Some(ItemKind::Reference(reference)) = self
+            .runs
+            .iter()
+            .find(|r| r.id == run)
+            .and_then(|r| r.items.get(item))
+            .map(|i| &i.kind)
+        else {
+            return;
+        };
+        let text = self.text(cx);
+        let (insertions, notice): (Vec<Insertion>, String) = if footnote {
+            let (n, edits) = footnote_citation(&text, range.end, reference);
+            (edits.into(), format!("Added footnote [^{n}]"))
+        } else {
+            (
+                vec![link_citation(&text, range.end, reference)],
+                "Added a link".into(),
+            )
+        };
+        if self.mode == ViewMode::Preview {
+            self.set_mode(ViewMode::Raw, window, cx);
+        }
+        self.editor().update(cx, |state, cx| {
+            for ins in insertions {
+                state.set_selected_range(ins.range, cx);
+                state.replace(ins.text, window, cx);
+            }
+        });
+        self.set_item_state(run, item, ItemState::Accepted, cx);
+        self.set_notice(notice, cx);
+    }
+
     fn close_run(&mut self, id: usize, cx: &mut Context<Self>) {
         if let Some(pos) = self.runs.iter().position(|r| r.id == id) {
             let run = self.runs.remove(pos);
@@ -434,9 +545,10 @@ impl Workspace {
             let message: SharedString = match &self.service_status {
                 ServiceStatus::Starting => "Starting the assistant…".into(),
                 ServiceStatus::Ready(_) => format!(
-                    "Select a passage, or put the cursor in a paragraph, then choose an action above.\n\n{} copy-edit · {} fact-check",
+                    "Select a passage, or put the cursor in a paragraph, then choose an action above.\n\n{} copy-edit · {} fact-check · {} references",
                     shortcut("E"),
                     shortcut("⇧C"),
+                    shortcut("⇧R"),
                 )
                 .into(),
                 ServiceStatus::Failed(e) => e.clone().into(),
@@ -478,6 +590,16 @@ impl Workspace {
                             .disabled(!ready)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.start_run(TaskKind::FactCheck, window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new("run-references")
+                            .label("References")
+                            .small()
+                            .outline()
+                            .disabled(!ready)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.start_run(TaskKind::FindReferences, window, cx)
                             })),
                     ),
             )
@@ -568,13 +690,14 @@ impl Workspace {
                 if !run.summary.is_empty() {
                     body = body.child(div().text_sm().child(run.summary.clone()));
                 }
-                if run.kind == TaskKind::CopyEdit && run.items.is_empty() {
-                    body = body.child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.muted_foreground)
-                            .child("No changes suggested."),
-                    );
+                if run.items.is_empty() {
+                    body = body.child(div().text_sm().text_color(theme.muted_foreground).child(
+                        match run.kind {
+                            TaskKind::CopyEdit => "No changes suggested.",
+                            TaskKind::FactCheck => "No checkable claims found.",
+                            TaskKind::FindReferences => "No references found.",
+                        },
+                    ));
                 }
                 if open_edits > 1 {
                     body = body.child(
@@ -617,6 +740,7 @@ impl Workspace {
         let open = item.state == ItemState::Open;
         let state_note = match item.state {
             ItemState::Open => None,
+            ItemState::Accepted if matches!(item.kind, ItemKind::Reference(_)) => Some("Inserted"),
             ItemState::Accepted => Some("Accepted"),
             ItemState::Dismissed => Some("Dismissed"),
             ItemState::Stale => Some("Text not found in the document"),
@@ -699,9 +823,66 @@ impl Workspace {
                     .child(div().text_sm().child(c.explanation.clone()))
                     .when(!c.sources.is_empty(), |d| d.child(sources))
             }
+            ItemKind::Reference(r) => {
+                let url = r.url.clone();
+                let meta: Vec<&str> = [r.authors.trim(), r.year.trim(), r.publisher.trim()]
+                    .into_iter()
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                v_flex()
+                    .gap_1()
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .items_start()
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .px_1()
+                                    .rounded_sm()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(relation_color(r.relation))
+                                    .border_1()
+                                    .border_color(relation_color(r.relation).opacity(0.5))
+                                    .child(r.relation.label()),
+                            )
+                            .child(
+                                div()
+                                    .id(ElementId::NamedInteger(
+                                        format!("ref-{run}").into(),
+                                        index as u64,
+                                    ))
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_sm()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(theme.link)
+                                    .underline()
+                                    .cursor_pointer()
+                                    .child(r.title.clone())
+                                    .on_click(move |_, _, cx| {
+                                        cx.stop_propagation();
+                                        cx.open_url(&url)
+                                    }),
+                            ),
+                    )
+                    .when(!meta.is_empty(), |d| {
+                        d.child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .child(meta.join(" · ")),
+                        )
+                    })
+                    .when(!r.note.is_empty(), |d| {
+                        d.child(div().text_sm().child(r.note.clone()))
+                    })
+            }
         };
 
         let is_edit = matches!(item.kind, ItemKind::Edit(_));
+        let is_reference = matches!(item.kind, ItemKind::Reference(_));
         v_flex()
             .id(element_id)
             .gap_2()
@@ -742,6 +923,38 @@ impl Workspace {
                                     move |this, _, window, cx| {
                                         cx.stop_propagation();
                                         this.accept_item(run, index, window, cx)
+                                    },
+                                )),
+                            )
+                        })
+                        .when(is_reference, |row| {
+                            row.child(
+                                Button::new(ElementId::NamedInteger(
+                                    format!("footnote-{run}").into(),
+                                    index as u64,
+                                ))
+                                .label("Insert footnote")
+                                .xsmall()
+                                .primary()
+                                .on_click(cx.listener(
+                                    move |this, _, window, cx| {
+                                        cx.stop_propagation();
+                                        this.insert_reference(run, index, true, window, cx)
+                                    },
+                                )),
+                            )
+                            .child(
+                                Button::new(ElementId::NamedInteger(
+                                    format!("link-{run}").into(),
+                                    index as u64,
+                                ))
+                                .label("Insert link")
+                                .xsmall()
+                                .outline()
+                                .on_click(cx.listener(
+                                    move |this, _, window, cx| {
+                                        cx.stop_propagation();
+                                        this.insert_reference(run, index, false, window, cx)
                                     },
                                 )),
                             )

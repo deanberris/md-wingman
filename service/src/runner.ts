@@ -147,5 +147,33 @@ function fakeData(task: TaskKind, text: string): unknown {
       ],
     };
   }
+  if (task === "find_references") {
+    const first = text.split(/(?<=[.!?])\s/)[0]?.trim() ?? text;
+    return {
+      summary: "[fake] two example references",
+      references: [
+        {
+          quote: first,
+          title: "An Example Study",
+          authors: "Doe, J. and Roe, R.",
+          year: "2020",
+          publisher: "Journal of Examples",
+          url: "https://example.com/study",
+          relation: "supports",
+          note: "[fake] A canned reference from WINGMAN_FAKE=1.",
+        },
+        {
+          quote: first,
+          title: "Example Encyclopedia Entry",
+          authors: "",
+          year: "",
+          publisher: "example.org",
+          url: "https://example.org/entry",
+          relation: "background",
+          note: "[fake] Background reading.",
+        },
+      ],
+    };
+  }
   return undefined;
 }

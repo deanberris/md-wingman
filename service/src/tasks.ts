@@ -72,6 +72,36 @@ export const FACT_CHECK_SCHEMA = {
   },
 } as const;
 
+export const REFERENCES_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "references"],
+  properties: {
+    summary: { type: "string", description: "One sentence on what the sources show overall." },
+    references: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["quote", "title", "authors", "year", "publisher", "url", "relation", "note"],
+        properties: {
+          quote: {
+            type: "string",
+            description: "The claim this source bears on, quoted exactly from the passage. The editor inserts the citation right after it.",
+          },
+          title: { type: "string" },
+          authors: { type: "string", description: "Authors as they would appear in a citation, or an empty string if none." },
+          year: { type: "string", description: "Year of publication, or an empty string if unknown." },
+          publisher: { type: "string", description: "Journal, publisher or website." },
+          url: { type: "string" },
+          relation: { type: "string", enum: ["supports", "challenges", "background"] },
+          note: { type: "string", description: "One sentence on how the source relates to the claim." },
+        },
+      },
+    },
+  },
+} as const;
+
 export const TASKS: Record<TaskKind, TaskSpec> = {
   copy_edit: {
     systemPrompt: `${COMMON}
@@ -92,9 +122,10 @@ Task: fact-check the passage. Identify each checkable factual claim. Use web sea
   find_references: {
     systemPrompt: `${COMMON}
 
-Task: find references for the passage. Search the web for reliable sources that support or challenge its main claims. Prefer primary sources, peer-reviewed work and reputable publications. For each source give the title, author or publisher, year, URL, and one sentence on how it relates to the passage. Reply in plain Markdown, concisely, without preamble.`,
+Task: find references for the passage. Search the web for reliable sources that support or challenge its main claims, or give useful background. Prefer primary sources, peer-reviewed work and reputable publications, and only cite pages you have actually found. Return up to six sources, best first. Tie each one to the claim it bears on. ${QUOTE_RULE}`,
     tools: ["WebSearch", "WebFetch"],
     maxTurns: 12,
+    schema: REFERENCES_SCHEMA,
   },
 };
 

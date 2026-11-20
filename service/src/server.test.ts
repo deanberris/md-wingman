@@ -57,6 +57,16 @@ test("a task streams deltas then done", async () => {
   c.close();
 });
 
+test("find_references returns structured references", async () => {
+  const c = await connect(fakeRunner);
+  c.send({ id: "r1", type: "task", task: "find_references", text: "Coffee helps. Tea too." });
+  const done = await c.waitFor((e) => e.id === "r1" && e.type === "done");
+  const refs = (done as { data: { references: Array<{ quote: string; relation: string }> } }).data.references;
+  expect(refs.length).toBe(2);
+  expect(refs[0]).toMatchObject({ quote: "Coffee helps.", relation: "supports" });
+  c.close();
+});
+
 test("bad requests get an error event", async () => {
   const c = await connect(fakeRunner);
   c.send({ id: "b", type: "task", task: "summarise", text: "x" });
