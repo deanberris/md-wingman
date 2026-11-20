@@ -3640,6 +3640,8 @@ dependencies = [
  "anyhow",
  "futures",
  "gpui-kit",
+ "serde",
+ "serde_json",
  "tempfile",
  "wingman-client",
 ]

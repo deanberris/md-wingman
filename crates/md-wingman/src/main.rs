@@ -4,6 +4,8 @@
 
 mod assistant;
 mod document;
+mod runs;
+mod suggestions;
 mod workspace;
 
 use std::path::PathBuf;
@@ -14,7 +16,16 @@ use crate::workspace::Workspace;
 
 actions!(
     md_wingman,
-    [NewFile, Open, Save, SaveAs, TogglePreview, Quit]
+    [
+        NewFile,
+        Open,
+        Save,
+        SaveAs,
+        TogglePreview,
+        CopyEdit,
+        FactCheck,
+        Quit
+    ]
 );
 
 /// A shortcut with Cmd on macOS and Ctrl elsewhere.
@@ -27,7 +38,6 @@ macro_rules! key {
         }
     };
 }
-pub(crate) use key;
 
 fn main() {
     let path = std::env::args_os().nth(1).map(PathBuf::from);
@@ -43,6 +53,8 @@ fn main() {
                 KeyBinding::new(key!("s"), Save, None),
                 KeyBinding::new(key!("shift-s"), SaveAs, None),
                 KeyBinding::new(key!("p"), TogglePreview, None),
+                KeyBinding::new(key!("e"), CopyEdit, None),
+                KeyBinding::new(key!("shift-c"), FactCheck, None),
                 KeyBinding::new(key!("q"), Quit, None),
             ]);
             cx.on_action(|_: &Quit, cx| cx.quit());
@@ -56,6 +68,10 @@ fn main() {
                     MenuItem::action("Save As…", SaveAs),
                 ]),
                 Menu::new("View").items([MenuItem::action("Toggle Preview", TogglePreview)]),
+                Menu::new("Assistant").items([
+                    MenuItem::action("Copy-edit", CopyEdit),
+                    MenuItem::action("Fact-check", FactCheck),
+                ]),
             ]);
 
             let options = WindowOptions {
