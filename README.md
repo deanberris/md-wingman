@@ -57,7 +57,7 @@ More detail is in [docs/architecture.md](docs/architecture.md).
 
 You need:
 
-- [Rust](https://rustup.rs)
+- [Rust](https://rustup.rs), installed with rustup. The repository pins the Rust version it needs (1.97), and rustup downloads it on the first build. If you already have Rust, run `rustup update` first so rustup itself is current.
 - [Bun](https://bun.sh): `curl -fsSL https://bun.sh/install | bash`
 - [Claude Code](https://claude.com/claude-code), signed in. Run `claude` once and log in with your Claude account.
 - Xcode command-line tools: `xcode-select --install`. If the build stops with an error about `metal`, install the full Xcode from the App Store, then run `sudo xcode-select -s /Applications/Xcode.app`.
