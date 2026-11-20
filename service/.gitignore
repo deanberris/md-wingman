@@ -1,2 +1,4 @@
 node_modules/
 dist/
+# Temp files bun build --compile leaves behind
+.*.bun-build
