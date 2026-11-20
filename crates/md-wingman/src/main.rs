@@ -2,6 +2,7 @@
 //!
 //! Usage: md-wingman [FILE]
 
+mod appearance;
 mod assistant;
 mod continuous;
 mod document;
@@ -39,6 +40,11 @@ actions!(
         ToggleContinuous,
         ToggleJevPrefilter,
         SetJevKey,
+        ToggleDarkMode,
+        AppearanceAndFonts,
+        IncreaseFontSize,
+        DecreaseFontSize,
+        ResetFontSize,
         Quit
     ]
 );
@@ -73,6 +79,9 @@ fn main() {
                 KeyBinding::new(key!("shift-r"), FindReferences, None),
                 KeyBinding::new(key!("alt-q"), Reflow, None),
                 KeyBinding::new(key!("shift-k"), ToggleContinuous, None),
+                KeyBinding::new(key!("="), IncreaseFontSize, None),
+                KeyBinding::new(key!("-"), DecreaseFontSize, None),
+                KeyBinding::new(key!("0"), ResetFontSize, None),
                 KeyBinding::new(key!("q"), Quit, None),
             ]);
             cx.on_action(|_: &Quit, cx| cx.quit());
@@ -99,6 +108,12 @@ fn main() {
                 Menu::new("View").items([
                     MenuItem::action("Toggle Preview", TogglePreview),
                     MenuItem::action("Toggle Ruler", ToggleRuler),
+                    MenuItem::separator(),
+                    MenuItem::action("Toggle Dark Mode", ToggleDarkMode),
+                    MenuItem::action("Appearance and Fonts…", AppearanceAndFonts),
+                    MenuItem::action("Bigger Text", IncreaseFontSize),
+                    MenuItem::action("Smaller Text", DecreaseFontSize),
+                    MenuItem::action("Actual Size", ResetFontSize),
                 ]),
                 Menu::new("Assistant").items([
                     MenuItem::action("Copy-edit", CopyEdit),

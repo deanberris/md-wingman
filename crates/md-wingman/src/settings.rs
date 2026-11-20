@@ -33,6 +33,23 @@ pub struct Settings {
     pub jev_threshold: f32,
     /// The Jev model, pinned so grades stay consistent.
     pub jev_model: String,
+    /// Light, dark, or follow the system.
+    pub appearance: Appearance,
+    /// The raw editor's font; the theme's monospace font when unset.
+    pub editor_font: Option<String>,
+    /// The raw editor's font size, in points.
+    pub editor_font_size: f32,
+    /// The preview's font; the system font when unset.
+    pub preview_font: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Appearance {
+    #[default]
+    System,
+    Light,
+    Dark,
 }
 
 impl Default for Settings {
@@ -48,6 +65,10 @@ impl Default for Settings {
             jev_prefilter: false,
             jev_threshold: 0.66,
             jev_model: "jev-1.14.0".into(),
+            appearance: Appearance::System,
+            editor_font: None,
+            editor_font_size: 14.,
+            preview_font: None,
         }
     }
 }
@@ -99,6 +120,7 @@ impl Settings {
         if !(0.0..=1.0).contains(&self.jev_threshold) {
             self.jev_threshold = Settings::default().jev_threshold;
         }
+        self.editor_font_size = self.editor_font_size.clamp(9., 32.);
         if self.jev_model.trim().is_empty() {
             self.jev_model = Settings::default().jev_model;
         }
@@ -117,6 +139,10 @@ mod tests {
         assert!(s.show_ruler);
         let s: Settings = serde_json::from_str(r#"{"ruler_column": 3}"#).unwrap();
         assert_eq!(s.sanitized().ruler_column, 20);
+        let s: Settings =
+            serde_json::from_str(r#"{"appearance": "dark", "editor_font": "Menlo"}"#).unwrap();
+        assert_eq!(s.appearance, Appearance::Dark);
+        assert_eq!(s.editor_font.as_deref(), Some("Menlo"));
     }
 
     #[test]

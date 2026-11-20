@@ -55,6 +55,8 @@ pub struct Workspace {
     pub(crate) continuous: crate::continuous::Continuous,
     /// The TypeSafe key panel, while it's open.
     pub(crate) key_input: Option<Entity<gpui_kit::component::input::InputState>>,
+    /// The appearance panel's font choices, while it's open.
+    pub(crate) font_choices: Option<crate::appearance::FontChoices>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -80,6 +82,10 @@ impl Workspace {
                     this.cursor_claims = claims;
                     cx.notify();
                 }
+            }),
+            // Follow the system's light or dark mode, when asked to.
+            cx.observe_window_appearance(window, |this, window, cx| {
+                this.apply_appearance(window, cx)
             }),
             cx.subscribe(&split, |this, split, _: &ResizablePanelEvent, cx| {
                 // Remember the assistant pane's share of the width.
@@ -112,8 +118,10 @@ impl Workspace {
             split,
             continuous: Default::default(),
             key_input: None,
+            font_choices: None,
             _subscriptions: subscriptions,
         };
+        this.apply_appearance(window, cx);
         if let Some(path) = path {
             this.open_path(path, window, cx);
         }
@@ -389,6 +397,9 @@ impl Workspace {
                                 .max_w(px(PREVIEW_MAX_WIDTH))
                                 .px_8()
                                 .py_8()
+                                .when_some(self.settings.preview_font.clone(), |d, font| {
+                                    d.font_family(font)
+                                })
                                 .child(
                                     TextView::markdown(
                                         ElementId::Name(
@@ -444,7 +455,7 @@ impl Workspace {
         body: impl IntoElement,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let theme = cx.theme();
+        let theme = cx.theme().clone();
         v_flex()
             .size_full()
             .border_l_1()
@@ -460,7 +471,16 @@ impl Workspace {
                     .text_sm()
                     .font_family(theme.mono_font_family.clone())
                     .text_color(theme.muted_foreground)
-                    .child("Assistant"),
+                    .child(div().flex_1().child("Assistant"))
+                    .child(
+                        Button::new("appearance-panel")
+                            .label("Aa")
+                            .xsmall()
+                            .ghost()
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.on_appearance_and_fonts(&crate::AppearanceAndFonts, window, cx)
+                            })),
+                    ),
             )
             .child(div().flex_1().min_h_0().child(body))
     }
@@ -493,6 +513,11 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_continuous))
             .on_action(cx.listener(Self::on_toggle_jev))
             .on_action(cx.listener(Self::on_set_jev_key))
+            .on_action(cx.listener(Self::on_toggle_dark_mode))
+            .on_action(cx.listener(Self::on_appearance_and_fonts))
+            .on_action(cx.listener(Self::on_increase_font_size))
+            .on_action(cx.listener(Self::on_decrease_font_size))
+            .on_action(cx.listener(Self::on_reset_font_size))
             .size_full()
             .bg(background)
             .text_color(foreground)

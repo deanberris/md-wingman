@@ -98,6 +98,10 @@ With [Jev](https://docs.typesafe.ai), TypeSafe's scoring model, checking as you 
 
 Turn it on with the **Jev pre-filter** button in the sidebar, or from Assistant ▸ Jev Pre-filter. The first time, it asks for your TypeSafe API key ([console.typesafe.ai/keys](https://console.typesafe.ai/keys)). The key is stored in your macOS Keychain under "md-wingman", never in the settings file. To change or remove it, use Assistant ▸ Set TypeSafe API Key…. If TypeSafe rejects the key, checking pauses until you set a new one. If Jev is busy, it waits and tries again.
 
+### Appearance and fonts
+
+Click **Aa** at the top of the sidebar, or choose View ▸ Appearance and Fonts…, to pick light, dark or system mode (which follows macOS), the editor's monospace font and size, and the preview's reading font. Only fonts installed on your Mac are offered. View ▸ Toggle Dark Mode switches modes, and ⌘= / ⌘− / ⌘0 change the editor's text size. The ruler stays at its column whatever the font.
+
 ### Keys
 
 | Keys | Action |
@@ -108,6 +112,7 @@ Turn it on with the **Jev pre-filter** button in the sidebar, or from Assistant 
 | ⇧⌘C | Fact-check the selection, or the paragraph under the cursor |
 | ⇧⌘R | Find references for the selection, or the paragraph under the cursor |
 | ⇧⌘K | Check as you write, on or off |
+| ⌘= / ⌘− / ⌘0 | Bigger / smaller / default editor text |
 | ⌥⌘Q | Reflow the paragraph (or selection) to the ruler column |
 | ⌘Z / ⇧⌘Z | Undo / Redo |
 | ⌘Q | Quit |
@@ -129,7 +134,11 @@ divider, and you can edit it by hand. Missing fields take their defaults.
   "continuous_fact_check": true,
   "jev_prefilter": false,
   "jev_threshold": 0.66,
-  "jev_model": "jev-1.14.0"
+  "jev_model": "jev-1.14.0",
+  "appearance": "system",
+  "editor_font": null,
+  "editor_font_size": 14,
+  "preview_font": null
 }
 ```
 
@@ -140,7 +149,9 @@ changes it. `continuous` turns on checking as you write.
 `continuous_delay_ms` is how long typing must pause before a check. Set
 `continuous_fact_check` to `false` to copy-edit only, since fact-checks search
 the web and take longer. `jev_threshold` is the grade, from 0 to 1, that a
-paragraph must score above for the pre-filter to act on it.
+paragraph must score above for the pre-filter to act on it. `appearance` is
+`"system"`, `"light"` or `"dark"`. A `null` font means the default: Menlo for
+the editor and the system font for the preview.
 
 ### Try the assistant without the app
 
