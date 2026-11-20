@@ -1,6 +1,6 @@
 # gpui uses std features that only recently became stable, so builds need a
 # recent Rust. rustup installs this version automatically on first build.
 [toolchain]
-channel = "1.97.0"
+channel = "1.100.0"
 profile = "minimal"
 components = ["rustfmt", "clippy"]
