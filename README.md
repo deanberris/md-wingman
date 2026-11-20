@@ -3,9 +3,8 @@
 A native macOS Markdown editor with Claude always on hand in a sidebar, to
 fact-check what you write, find references for it, and suggest copy edits.
 
-> **Status: early development.** The assistant service and its Rust client
-> work. The editor app is next. See [Building](#building) to try the
-> assistant from the command line.
+> **Status: early development.** The editor and the assistant service work.
+> The assistant features are being added to the sidebar.
 
 ## What it is meant to be
 
@@ -54,23 +53,43 @@ version.
 
 More detail is in [docs/architecture.md](docs/architecture.md).
 
-## Building
+## Run it on a Mac
 
-The app itself isn't here yet. You can try the assistant service from the
-command line. You need Rust, [Bun](https://bun.sh), and
-[Claude Code](https://claude.com/claude-code), signed in with `claude`.
+You need:
+
+- [Rust](https://rustup.rs), installed with rustup. The repository pins the Rust version it needs (1.100), and rustup downloads it on the first build. If you already have Rust, run `rustup update` first so rustup itself is current.
+- [Bun](https://bun.sh): `curl -fsSL https://bun.sh/install | bash`
+- [Claude Code](https://claude.com/claude-code), signed in. Run `claude` once and log in with your Claude account.
+- Xcode command-line tools: `xcode-select --install`. If the build stops with an error about `metal`, install the full Xcode from the App Store, then run `sudo xcode-select -s /Applications/Xcode.app`.
+
+Then:
+
+```sh
+git clone https://github.com/deanberris/md-wingman && cd md-wingman
+scripts/dev.sh                  # an empty document
+scripts/dev.sh notes/draft.md   # or open a file
+```
+
+The first build takes a few minutes. md-wingman uses your Claude subscription by default and ignores any `ANTHROPIC_API_KEY` in your environment. To use an API key instead, run `WINGMAN_AUTH=api_key scripts/dev.sh`. The status bar shows which one is in use.
+
+### Keys
+
+| Keys | Action |
+|---|---|
+| ⌘N / ⌘O / ⌘S / ⇧⌘S | New / Open / Save / Save As |
+| ⌘P | Switch between raw Markdown and the preview |
+| ⌘Q | Quit |
+
+### Try the assistant without the app
 
 ```sh
 cd service && bun install && bun run build && cd ..
 cargo run -p wingman-client --example wingman -- fact-check "The Eiffel Tower opened in 1899."
 ```
 
-md-wingman uses your Claude subscription by default and ignores any
-`ANTHROPIC_API_KEY` in your environment. To use an API key instead, pass
-`--api-key` first: `cargo run -p wingman-client --example wingman -- --api-key fact-check "..."`.
-
 ## Layout
 
+- `crates/md-wingman`: the app, built with [gpui](https://gpui.rs) and [gpui-component](https://github.com/longbridge/gpui-component)
 - `crates/wingman-client`: Rust client for the assistant service
 - `service/`: the assistant service, in TypeScript on the Claude Agent SDK
 - `docs/`: [architecture](docs/architecture.md) and the [UI toolkit choice](docs/toolkit-choice.md)

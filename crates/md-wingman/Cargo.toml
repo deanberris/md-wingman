@@ -1,0 +1,22 @@
+[package]
+name = "md-wingman"
+description = "A Markdown editor with a Claude writing assistant beside it"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.100"
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "md-wingman"
+path = "src/main.rs"
+
+[dependencies]
+# Pinned exactly: gpui and gpui-kit are pre-1.0 and change between releases.
+gpui-kit = { version = "=0.10.0", features = ["tree-sitter-markdown"] }
+wingman-client = { path = "../wingman-client" }
+futures = "0.3"
+anyhow = "1"
+
+[dev-dependencies]
+tempfile = "3"

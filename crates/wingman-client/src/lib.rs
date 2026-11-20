@@ -242,6 +242,15 @@ impl Client {
         })
     }
 
+    /// Cancels the task with this id. Its last event will be an `Error` with
+    /// the message `cancelled`.
+    pub fn cancel(&self, task_id: &str) -> io::Result<()> {
+        self.shared.send(&Request::Cancel {
+            id: &format!("{task_id}-cancel"),
+            target: task_id,
+        })
+    }
+
     /// Asks the service process to exit.
     pub fn shutdown(&self) -> io::Result<()> {
         self.shared.send(&Request::Shutdown { id: "shutdown" })
