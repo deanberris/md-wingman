@@ -24,6 +24,7 @@ actions!(
         TogglePreview,
         CopyEdit,
         FactCheck,
+        FindReferences,
         Quit
     ]
 );
@@ -55,6 +56,7 @@ fn main() {
                 KeyBinding::new(key!("p"), TogglePreview, None),
                 KeyBinding::new(key!("e"), CopyEdit, None),
                 KeyBinding::new(key!("shift-c"), FactCheck, None),
+                KeyBinding::new(key!("shift-r"), FindReferences, None),
                 KeyBinding::new(key!("q"), Quit, None),
             ]);
             cx.on_action(|_: &Quit, cx| cx.quit());
@@ -71,6 +73,7 @@ fn main() {
                 Menu::new("Assistant").items([
                     MenuItem::action("Copy-edit", CopyEdit),
                     MenuItem::action("Fact-check", FactCheck),
+                    MenuItem::action("Find References", FindReferences),
                 ]),
             ]);
 

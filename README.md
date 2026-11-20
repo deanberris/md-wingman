@@ -25,7 +25,7 @@ The first build takes a few minutes. md-wingman uses your Claude subscription by
 
 ### Using the assistant
 
-Select a passage, or just put the cursor in a paragraph, then press ⌘E to copy-edit or ⇧⌘C to fact-check (the buttons at the top of the sidebar do the same). Suggested edits are underlined in the text and listed in the sidebar, where you can accept or dismiss each one, or accept them all. Fact-checked claims are shaded by verdict and come with sources. Click a card to jump to its text. Set `WINGMAN_FAKE=1` to try the flow with canned replies, without calling Claude.
+Select a passage, or just put the cursor in a paragraph, then press ⌘E to copy-edit, ⇧⌘C to fact-check or ⇧⌘R to find references (the buttons at the top of the sidebar do the same). Suggested edits are underlined in the text and listed in the sidebar, where you can accept or dismiss each one, or accept them all. Fact-checked claims are shaded by verdict and come with sources. Each reference can be cited right after the claim it backs, as a footnote (with the full citation added at the end of the document) or as an inline link. Click a card to jump to its text. Set `WINGMAN_FAKE=1` to try the flow with canned replies, without calling Claude.
 
 ### Keys
 
@@ -35,6 +35,7 @@ Select a passage, or just put the cursor in a paragraph, then press ⌘E to copy
 | ⌘P | Switch between raw Markdown and the preview |
 | ⌘E | Copy-edit the selection, or the paragraph under the cursor |
 | ⇧⌘C | Fact-check the selection, or the paragraph under the cursor |
+| ⇧⌘R | Find references for the selection, or the paragraph under the cursor |
 | ⌘Q | Quit |
 
 ## Layout

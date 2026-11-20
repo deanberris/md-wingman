@@ -415,6 +415,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_preview))
             .on_action(cx.listener(Self::on_copy_edit))
             .on_action(cx.listener(Self::on_fact_check))
+            .on_action(cx.listener(Self::on_find_references))
             .size_full()
             .bg(background)
             .text_color(foreground)
