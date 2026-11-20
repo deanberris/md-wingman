@@ -3,16 +3,16 @@
 
 use std::ops::Range;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CopyEditReply {
     #[serde(default)]
     pub summary: String,
     pub edits: Vec<EditSuggestion>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct EditSuggestion {
     pub original: String,
     pub replacement: String,
@@ -20,14 +20,14 @@ pub struct EditSuggestion {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct FactCheckReply {
     #[serde(default)]
     pub summary: String,
     pub claims: Vec<Claim>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Claim {
     pub quote: String,
     pub verdict: Verdict,
@@ -37,7 +37,7 @@ pub struct Claim {
     pub sources: Vec<Source>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
     Supported,
@@ -57,20 +57,20 @@ impl Verdict {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Source {
     pub title: String,
     pub url: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ReferencesReply {
     #[serde(default)]
     pub summary: String,
     pub references: Vec<Reference>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Reference {
     #[serde(default)]
     pub quote: String,
@@ -87,7 +87,7 @@ pub struct Reference {
     pub note: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Relation {
     Supports,
@@ -264,6 +264,45 @@ pub fn locate_all<'a>(
         .collect()
 }
 
+/// Finds `quote` again near `anchor`, where it was last seen: the closest
+/// match that starts within `reach` bytes of it. Used to re-attach a finding
+/// to its text after edits, undo and redo.
+pub fn relocate(text: &str, quote: &str, anchor: usize, reach: usize) -> Option<Range<usize>> {
+    if quote.is_empty() {
+        return None;
+    }
+    text.match_indices(quote)
+        .map(|(i, _)| i..i + quote.len())
+        .filter(|r| r.start.abs_diff(anchor) <= reach)
+        .min_by_key(|r| r.start.abs_diff(anchor))
+}
+
+/// Replaces several disjoint ranges of `text` with one replacement of the
+/// span that covers them all, so an editor applies them as a single undoable
+/// change. Returns the span and its new text, or `None` if the ranges
+/// overlap or fall outside the text.
+pub fn combine_edits(text: &str, edits: &[Insertion]) -> Option<(Range<usize>, String)> {
+    let mut edits: Vec<&Insertion> = edits.iter().collect();
+    edits.sort_by_key(|e| (e.range.start, e.range.end));
+    let start = edits.first()?.range.start;
+    let end = edits.iter().map(|e| e.range.end).max()?;
+    if end > text.len() || !text.is_char_boundary(start) || !text.is_char_boundary(end) {
+        return None;
+    }
+    let mut out = String::new();
+    let mut at = start;
+    for e in edits {
+        if e.range.start < at || !text.is_char_boundary(e.range.start) {
+            return None;
+        }
+        out.push_str(&text[at..e.range.start]);
+        out.push_str(&e.text);
+        at = e.range.end;
+    }
+    out.push_str(&text[at..end]);
+    Some((start..end, out))
+}
+
 /// Every match of `quote`, best first: inside `within`, then by distance.
 fn candidates(text: &str, quote: &str, within: &Range<usize>) -> Vec<Range<usize>> {
     if quote.is_empty() {
@@ -403,6 +442,46 @@ mod tests {
         assert!(twice.ends_with(
             "<https://x.org/a>\n[^2]: Doe, J. (2021). *A Study*. Journal. <https://x.org/a>\n"
         ));
+    }
+
+    #[test]
+    fn relocate_finds_the_nearest_match_within_reach() {
+        let text = "it was here. later, it was there.";
+        assert_eq!(relocate(text, "it was", 18, 5), Some(20..26));
+        assert_eq!(relocate(text, "it was", 2, 5), Some(0..6));
+        assert_eq!(relocate(text, "it was", 10, 5), None);
+        assert_eq!(relocate(text, "gone", 0, 100), None);
+    }
+
+    #[test]
+    fn combine_edits_makes_one_change() {
+        let text = "Their are cats and it were fun.";
+        let edits = [
+            Insertion {
+                range: 19..26,
+                text: "it was".into(),
+            },
+            Insertion {
+                range: 0..9,
+                text: "There are".into(),
+            },
+        ];
+        let (span, new) = combine_edits(text, &edits).unwrap();
+        assert_eq!(span, 0..26);
+        let mut out = text.to_string();
+        out.replace_range(span, &new);
+        assert_eq!(out, "There are cats and it was fun.");
+        let overlapping = [
+            Insertion {
+                range: 0..5,
+                text: String::new(),
+            },
+            Insertion {
+                range: 3..8,
+                text: String::new(),
+            },
+        ];
+        assert_eq!(combine_edits(text, &overlapping), None);
     }
 
     #[test]

@@ -6,7 +6,6 @@ use std::ops::Range;
 
 use futures::StreamExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{TextDecoration, TextDecorationCollection};
 use gpui_kit::component::text::TextView;
 use gpui_kit::component::Theme;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Disableable as _, Sizable as _};
@@ -15,9 +14,9 @@ use gpui_kit::*;
 use wingman_client::{Event, TaskKind};
 
 use crate::assistant::{task_title, ServiceStatus};
+use crate::findings::{relation_color, verdict_color, Finding, FindingKind, FindingState};
 use crate::suggestions::{
-    footnote_citation, link_citation, locate_all, passage_range, Claim, CopyEditReply,
-    EditSuggestion, FactCheckReply, Insertion, Reference, ReferencesReply, Relation, Verdict,
+    locate_all, passage_range, CopyEditReply, FactCheckReply, ReferencesReply,
 };
 use crate::workspace::{ViewMode, Workspace};
 use crate::{CopyEdit, FactCheck, FindReferences};
@@ -35,7 +34,8 @@ pub struct TaskRun {
     state: RunState,
     streamed: String,
     summary: String,
-    items: Vec<RunItem>,
+    /// The findings this run produced.
+    items: Vec<u64>,
     cancel: Option<Box<dyn Fn() + Send>>,
     _events: Option<Task<()>>,
 }
@@ -45,77 +45,6 @@ enum RunState {
     Running(String),
     Done,
     Failed(String),
-}
-
-struct RunItem {
-    kind: ItemKind,
-    /// Tracks the item's text in the editor as the document changes.
-    highlight: Option<TextDecorationCollection>,
-    state: ItemState,
-}
-
-enum ItemKind {
-    Edit(EditSuggestion),
-    Claim(Claim),
-    Reference(Reference),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ItemState {
-    Open,
-    Accepted,
-    Dismissed,
-    /// The text it refers to was changed or deleted.
-    Stale,
-}
-
-/// An item before it is placed: what it is, the text it quotes, its style.
-type RawItem = (ItemKind, String, HighlightStyle);
-
-fn edit_style() -> HighlightStyle {
-    HighlightStyle {
-        underline: Some(UnderlineStyle {
-            thickness: px(2.),
-            color: Some(hsla(0.08, 0.9, 0.5, 1.)),
-            wavy: true,
-        }),
-        ..Default::default()
-    }
-}
-
-fn verdict_color(verdict: Verdict) -> Hsla {
-    match verdict {
-        Verdict::Supported => hsla(0.38, 0.6, 0.4, 1.),
-        Verdict::Disputed => hsla(0.11, 0.9, 0.45, 1.),
-        Verdict::False => hsla(0.0, 0.75, 0.5, 1.),
-        Verdict::Unverifiable => hsla(0.0, 0.0, 0.5, 1.),
-    }
-}
-
-fn relation_color(relation: Relation) -> Hsla {
-    match relation {
-        Relation::Supports => hsla(0.38, 0.6, 0.4, 1.),
-        Relation::Challenges => hsla(0.0, 0.75, 0.5, 1.),
-        Relation::Background => hsla(0.6, 0.5, 0.5, 1.),
-    }
-}
-
-fn reference_style() -> HighlightStyle {
-    HighlightStyle {
-        underline: Some(UnderlineStyle {
-            thickness: px(1.),
-            color: Some(hsla(0.6, 0.6, 0.5, 0.8)),
-            wavy: false,
-        }),
-        ..Default::default()
-    }
-}
-
-fn claim_style(verdict: Verdict) -> HighlightStyle {
-    HighlightStyle {
-        background_color: Some(verdict_color(verdict).opacity(0.18)),
-        ..Default::default()
-    }
 }
 
 impl Workspace {
@@ -265,8 +194,9 @@ impl Workspace {
         let (kind, passage) = (run.kind, run.passage.clone());
         let doc = self.text(cx);
 
-        // Turn the reply into items, each with its text found in the document.
-        let parsed: Result<(String, Vec<RawItem>), String> = match kind {
+        // Turn the reply into findings, each with its text found in the document.
+        type Parsed = (String, Vec<(FindingKind, String)>);
+        let parsed: Result<Parsed, String> = match kind {
             TaskKind::CopyEdit => data
                 .ok_or_else(|| "No suggestions came back".to_string())
                 .and_then(|d| serde_json::from_value::<CopyEditReply>(d).map_err(|e| e.to_string()))
@@ -276,8 +206,8 @@ impl Workspace {
                         .into_iter()
                         .filter(|e| e.original != e.replacement)
                         .map(|e| {
-                            let quote = e.original.clone();
-                            (ItemKind::Edit(e), quote, edit_style())
+                            let q = e.original.clone();
+                            (FindingKind::Edit(e), q)
                         })
                         .collect();
                     (r.summary, items)
@@ -292,9 +222,8 @@ impl Workspace {
                         .claims
                         .into_iter()
                         .map(|c| {
-                            let quote = c.quote.clone();
-                            let style = claim_style(c.verdict);
-                            (ItemKind::Claim(c), quote, style)
+                            let q = c.quote.clone();
+                            (FindingKind::Claim(c), q)
                         })
                         .collect();
                     (r.summary, items)
@@ -309,8 +238,8 @@ impl Workspace {
                         .references
                         .into_iter()
                         .map(|r| {
-                            let quote = r.quote.clone();
-                            (ItemKind::Reference(r), quote, reference_style())
+                            let q = r.quote.clone();
+                            (FindingKind::Reference(r), q)
                         })
                         .collect();
                     (r.summary, items)
@@ -328,43 +257,43 @@ impl Workspace {
             }
         };
 
-        let ranges = if kind == TaskKind::FindReferences {
+        // A new fact-check of a passage replaces the old results for it.
+        if kind == TaskKind::FactCheck {
+            let old: Vec<u64> = self
+                .findings
+                .iter()
+                .filter(|f| f.is_claim() && passage.contains(&f.anchor))
+                .map(|f| f.id)
+                .collect();
+            self.drop_findings(&old, cx);
+        }
+
+        let ranges: Vec<Option<Range<usize>>> = if kind == TaskKind::FindReferences {
             // Several sources can back the same claim, so they may share a match.
             raw_items
                 .iter()
-                .map(|(_, q, _)| locate_all(&doc, [q.as_str()], &passage).pop().flatten())
+                .map(|(_, q)| locate_all(&doc, [q.as_str()], &passage).pop().flatten())
                 .collect()
         } else {
-            locate_all(&doc, raw_items.iter().map(|(_, q, _)| q.as_str()), &passage)
+            locate_all(&doc, raw_items.iter().map(|(_, q)| q.as_str()), &passage)
         };
         // A reference whose claim can't be found is cited after the passage.
-        let passage_intact = doc
-            .get(passage.clone())
-            .is_some_and(|p| !p.trim().is_empty());
+        let passage_text = doc.get(passage.clone()).map(str::to_string);
         let mut items = Vec::new();
-        for ((mut kind, _, mut style), mut range) in raw_items.into_iter().zip(ranges) {
-            if let ItemKind::Reference(r) = &mut kind {
-                if range.is_none() && passage_intact {
-                    r.quote = doc[passage.clone()].to_string();
-                    range = Some(passage.clone());
-                    style = HighlightStyle::default();
+        for ((mut kind, quote), range) in raw_items.into_iter().zip(ranges) {
+            let (quote, anchor, quiet) = match (range, &mut kind, &passage_text) {
+                (Some(r), _, _) => (quote, r.start, false),
+                (None, FindingKind::Reference(r), Some(p)) if !p.trim().is_empty() => {
+                    r.quote = p.clone();
+                    (p.clone(), passage.start, true)
                 }
-            }
-            let highlight = range.map(|range| {
-                self.editor().update(cx, |state, cx| {
-                    state.create_decorations_collection(vec![TextDecoration::new(range, style)], cx)
-                })
-            });
-            let state = if highlight.is_some() {
-                ItemState::Open
-            } else {
-                ItemState::Stale
+                (None, _, _) => (quote, passage.start, false),
             };
-            items.push(RunItem {
-                kind,
-                highlight,
-                state,
-            });
+            items.push(self.add_finding(kind, quote, anchor, Some(id), quiet));
+        }
+        self.reconcile_findings(cx);
+        if kind == TaskKind::FactCheck {
+            self.save_claims(cx);
         }
 
         if let Some(run) = self.run_mut(id) {
@@ -375,163 +304,23 @@ impl Workspace {
         }
     }
 
-    /// The current range of an item's text, if it still matches what the
-    /// assistant quoted.
-    fn item_range(&self, run: usize, item: usize, cx: &App) -> Option<Range<usize>> {
-        let run = self.runs.iter().find(|r| r.id == run)?;
-        let item = run.items.get(item)?;
-        let range = item.highlight.as_ref()?.get_ranges(cx).into_iter().next()?;
-        let expected = match &item.kind {
-            ItemKind::Edit(e) => &e.original,
-            ItemKind::Claim(c) => &c.quote,
-            ItemKind::Reference(r) => &r.quote,
-        };
-        let text = self.editor().read(cx).value();
-        (text.get(range.clone()) == Some(expected.as_str())).then_some(range)
-    }
-
-    fn set_item_state(
-        &mut self,
-        run: usize,
-        item: usize,
-        state: ItemState,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(it) = self.run_mut(run).and_then(|r| r.items.get_mut(item)) {
-            it.state = state;
-            if let Some(h) = it.highlight.take() {
-                h.clear(cx);
-            }
-        }
-        cx.notify();
-    }
-
-    fn accept_item(
-        &mut self,
-        run: usize,
-        item: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(range) = self.item_range(run, item, cx) else {
-            self.set_item_state(run, item, ItemState::Stale, cx);
-            return;
-        };
-        let replacement = match self
-            .runs
-            .iter()
-            .find(|r| r.id == run)
-            .and_then(|r| r.items.get(item))
-            .map(|i| &i.kind)
-        {
-            Some(ItemKind::Edit(e)) => e.replacement.clone(),
-            _ => return,
-        };
-        self.editor().update(cx, |state, cx| {
-            state.set_selected_range(range, cx);
-            state.replace(replacement, window, cx);
-        });
-        self.set_item_state(run, item, ItemState::Accepted, cx);
-    }
-
-    fn accept_all(&mut self, run: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let count = self
-            .runs
-            .iter()
-            .find(|r| r.id == run)
-            .map(|r| r.items.len())
-            .unwrap_or(0);
-        for i in 0..count {
-            let open = self
-                .runs
-                .iter()
-                .find(|r| r.id == run)
-                .and_then(|r| r.items.get(i))
-                .is_some_and(|it| it.state == ItemState::Open);
-            if open {
-                self.accept_item(run, i, window, cx);
-            }
-        }
-    }
-
-    fn reveal_item(
-        &mut self,
-        run: usize,
-        item: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match self.item_range(run, item, cx) {
-            Some(range) => {
-                if self.mode == ViewMode::Preview {
-                    self.set_mode(ViewMode::Raw, window, cx);
-                }
-                self.editor().update(cx, |state, cx| {
-                    state.set_selected_range(range, cx);
-                    state.focus(window, cx);
-                });
-            }
-            None => self.set_item_state(run, item, ItemState::Stale, cx),
-        }
-    }
-
-    /// Cites a reference after the claim it backs, as an inline link or a
-    /// footnote.
-    fn insert_reference(
-        &mut self,
-        run: usize,
-        item: usize,
-        footnote: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(range) = self.item_range(run, item, cx) else {
-            self.set_item_state(run, item, ItemState::Stale, cx);
-            return;
-        };
-        let Some(ItemKind::Reference(reference)) = self
-            .runs
-            .iter()
-            .find(|r| r.id == run)
-            .and_then(|r| r.items.get(item))
-            .map(|i| &i.kind)
-        else {
-            return;
-        };
-        let text = self.text(cx);
-        let (insertions, notice): (Vec<Insertion>, String) = if footnote {
-            let (n, edits) = footnote_citation(&text, range.end, reference);
-            (edits.into(), format!("Added footnote [^{n}]"))
-        } else {
-            (
-                vec![link_citation(&text, range.end, reference)],
-                "Added a link".into(),
-            )
-        };
-        if self.mode == ViewMode::Preview {
-            self.set_mode(ViewMode::Raw, window, cx);
-        }
-        self.editor().update(cx, |state, cx| {
-            for ins in insertions {
-                state.set_selected_range(ins.range, cx);
-                state.replace(ins.text, window, cx);
-            }
-        });
-        self.set_item_state(run, item, ItemState::Accepted, cx);
-        self.set_notice(notice, cx);
-    }
-
+    /// Closes a run's card. Its fact-checks stay with the text; its other
+    /// findings go.
     fn close_run(&mut self, id: usize, cx: &mut Context<Self>) {
         if let Some(pos) = self.runs.iter().position(|r| r.id == id) {
             let run = self.runs.remove(pos);
             if let Some(cancel) = &run.cancel {
                 cancel();
             }
-            for item in run.items {
-                if let Some(h) = item.highlight {
-                    h.clear(cx);
+            let mut drop = Vec::new();
+            for fid in run.items {
+                match self.findings.iter_mut().find(|f| f.id == fid) {
+                    Some(f) if f.is_claim() => f.run = None,
+                    Some(_) => drop.push(fid),
+                    None => {}
                 }
             }
+            self.drop_findings(&drop, cx);
         }
         cx.notify();
     }
@@ -541,7 +330,7 @@ impl Workspace {
         let ready = matches!(self.service_status, ServiceStatus::Ready(_));
 
         let mut list = v_flex().gap_3().p_3();
-        if self.runs.is_empty() {
+        if self.runs.is_empty() && !self.findings.iter().any(Finding::visible) {
             let message: SharedString = match &self.service_status {
                 ServiceStatus::Starting => "Starting the assistant…".into(),
                 ServiceStatus::Ready(_) => format!(
@@ -560,8 +349,35 @@ impl Workspace {
                     .child(message),
             );
         }
+        // Fact-checks of the text under the cursor, wherever they came from.
+        let at_cursor = self.claims_at_cursor(cx);
+        if !at_cursor.is_empty() {
+            list = list.child(section_heading("At the cursor", &theme));
+            for id in &at_cursor {
+                if let Some(f) = self.finding(*id) {
+                    list = list.child(self.render_finding("cursor", f, &theme, cx));
+                }
+            }
+        }
         for run in &self.runs {
             list = list.child(self.render_run(run, &theme, cx));
+        }
+        // Fact-checks kept with the text after their run's card was closed,
+        // or saved from an earlier session.
+        let mut kept: Vec<&Finding> = self
+            .findings
+            .iter()
+            .filter(|f| f.is_claim() && f.run.is_none() && f.visible())
+            .collect();
+        kept.sort_by_key(|f| f.anchor);
+        if !kept.is_empty() {
+            list = list.child(section_heading(
+                &format!("Fact-checks in this document ({})", kept.len()),
+                &theme,
+            ));
+            for f in kept {
+                list = list.child(self.render_finding("kept", f, &theme, cx));
+            }
         }
 
         v_flex()
@@ -616,10 +432,20 @@ impl Workspace {
 
     fn render_run(&self, run: &TaskRun, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let id = run.id;
-        let open_edits = run
+        let findings: Vec<&Finding> = run
             .items
             .iter()
-            .filter(|i| i.state == ItemState::Open && matches!(i.kind, ItemKind::Edit(_)))
+            .filter_map(|id| self.finding(*id))
+            .collect();
+        let open_edits: Vec<u64> = findings
+            .iter()
+            .filter(|f| f.visible() && matches!(f.kind, FindingKind::Edit(_)))
+            .map(|f| f.id)
+            .collect();
+        // Findings whose text is gone for now; undo can bring them back.
+        let hidden = findings
+            .iter()
+            .filter(|f| !f.live && f.state == FindingState::Open)
             .count();
 
         let header = h_flex()
@@ -699,19 +525,32 @@ impl Workspace {
                         },
                     ));
                 }
-                if open_edits > 1 {
+                if open_edits.len() > 1 {
+                    let ids = open_edits.clone();
                     body = body.child(
                         Button::new(("accept-all", id))
-                            .label(format!("Accept all {open_edits}"))
+                            .label(format!("Accept all {}", open_edits.len()))
                             .xsmall()
                             .primary()
                             .on_click(cx.listener(move |this, _, window, cx| {
-                                this.accept_all(id, window, cx)
+                                this.accept_edits(&ids, window, cx)
                             })),
                     );
                 }
-                for (i, item) in run.items.iter().enumerate() {
-                    body = body.child(self.render_item(id, i, item, theme, cx));
+                for f in findings
+                    .iter()
+                    .filter(|f| f.live || f.state != FindingState::Open)
+                {
+                    body = body.child(self.render_finding("run", f, theme, cx));
+                }
+                if hidden > 0 {
+                    body = body.child(div().text_xs().text_color(theme.muted_foreground).child(
+                        if hidden == 1 {
+                            "1 more refers to text that has changed".to_string()
+                        } else {
+                            format!("{hidden} more refer to text that has changed")
+                        },
+                    ));
                 }
             }
         }
@@ -728,26 +567,28 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn render_item(
+    fn render_finding(
         &self,
-        run: usize,
-        index: usize,
-        item: &RunItem,
+        section: &str,
+        f: &Finding,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let element_id = ElementId::NamedInteger(format!("item-{run}").into(), index as u64);
-        let open = item.state == ItemState::Open;
-        let state_note = match item.state {
-            ItemState::Open => None,
-            ItemState::Accepted if matches!(item.kind, ItemKind::Reference(_)) => Some("Inserted"),
-            ItemState::Accepted => Some("Accepted"),
-            ItemState::Dismissed => Some("Dismissed"),
-            ItemState::Stale => Some("Text not found in the document"),
+        let fid = f.id;
+        let key = |name: &str| ElementId::NamedInteger(format!("{name}-{section}").into(), fid);
+        let open = f.visible();
+        let state_note = match f.state {
+            FindingState::Open if !f.live => Some("Its text has changed"),
+            FindingState::Open => None,
+            FindingState::Accepted if matches!(f.kind, FindingKind::Reference(_)) => {
+                Some("Inserted")
+            }
+            FindingState::Accepted => Some("Accepted"),
+            FindingState::Dismissed => Some("Dismissed"),
         };
 
-        let content = match &item.kind {
-            ItemKind::Edit(e) => v_flex()
+        let content = match &f.kind {
+            FindingKind::Edit(e) => v_flex()
                 .gap_1()
                 .child(
                     h_flex()
@@ -776,14 +617,14 @@ impl Workspace {
                             .child(e.reason.clone()),
                     )
                 }),
-            ItemKind::Claim(c) => {
+            FindingKind::Claim(c) => {
                 let mut sources = h_flex().flex_wrap().gap_2();
                 for (si, source) in c.sources.iter().enumerate() {
                     let url = source.url.clone();
                     sources = sources.child(
                         div()
                             .id(ElementId::NamedInteger(
-                                format!("src-{run}-{index}").into(),
+                                format!("src-{section}-{fid}").into(),
                                 si as u64,
                             ))
                             .text_xs()
@@ -823,7 +664,7 @@ impl Workspace {
                     .child(div().text_sm().child(c.explanation.clone()))
                     .when(!c.sources.is_empty(), |d| d.child(sources))
             }
-            ItemKind::Reference(r) => {
+            FindingKind::Reference(r) => {
                 let url = r.url.clone();
                 let meta: Vec<&str> = [r.authors.trim(), r.year.trim(), r.publisher.trim()]
                     .into_iter()
@@ -849,10 +690,7 @@ impl Workspace {
                             )
                             .child(
                                 div()
-                                    .id(ElementId::NamedInteger(
-                                        format!("ref-{run}").into(),
-                                        index as u64,
-                                    ))
+                                    .id(key("ref"))
                                     .flex_1()
                                     .min_w_0()
                                     .text_sm()
@@ -881,10 +719,10 @@ impl Workspace {
             }
         };
 
-        let is_edit = matches!(item.kind, ItemKind::Edit(_));
-        let is_reference = matches!(item.kind, ItemKind::Reference(_));
+        let is_edit = matches!(f.kind, FindingKind::Edit(_));
+        let is_reference = matches!(f.kind, FindingKind::Reference(_));
         v_flex()
-            .id(element_id)
+            .id(key("finding"))
             .gap_2()
             .p_2()
             .rounded_md()
@@ -892,9 +730,7 @@ impl Workspace {
             .when(!open, |d| d.opacity(0.55))
             .when(open, |d| {
                 d.cursor_pointer().hover(|s| s.bg(theme.muted)).on_click(
-                    cx.listener(move |this, _, window, cx| {
-                        this.reveal_item(run, index, window, cx)
-                    }),
+                    cx.listener(move |this, _, window, cx| this.reveal_finding(fid, window, cx)),
                 )
             })
             .child(content)
@@ -912,72 +748,61 @@ impl Workspace {
                         .gap_1()
                         .when(is_edit, |row| {
                             row.child(
-                                Button::new(ElementId::NamedInteger(
-                                    format!("accept-{run}").into(),
-                                    index as u64,
-                                ))
-                                .label("Accept")
-                                .xsmall()
-                                .primary()
-                                .on_click(cx.listener(
-                                    move |this, _, window, cx| {
+                                Button::new(key("accept"))
+                                    .label("Accept")
+                                    .xsmall()
+                                    .primary()
+                                    .on_click(cx.listener(move |this, _, window, cx| {
                                         cx.stop_propagation();
-                                        this.accept_item(run, index, window, cx)
-                                    },
-                                )),
+                                        this.accept_edits(&[fid], window, cx)
+                                    })),
                             )
                         })
                         .when(is_reference, |row| {
                             row.child(
-                                Button::new(ElementId::NamedInteger(
-                                    format!("footnote-{run}").into(),
-                                    index as u64,
-                                ))
-                                .label("Insert footnote")
-                                .xsmall()
-                                .primary()
-                                .on_click(cx.listener(
-                                    move |this, _, window, cx| {
+                                Button::new(key("footnote"))
+                                    .label("Insert footnote")
+                                    .xsmall()
+                                    .primary()
+                                    .on_click(cx.listener(move |this, _, window, cx| {
                                         cx.stop_propagation();
-                                        this.insert_reference(run, index, true, window, cx)
-                                    },
-                                )),
+                                        this.insert_reference(fid, true, window, cx)
+                                    })),
                             )
                             .child(
-                                Button::new(ElementId::NamedInteger(
-                                    format!("link-{run}").into(),
-                                    index as u64,
-                                ))
-                                .label("Insert link")
-                                .xsmall()
-                                .outline()
-                                .on_click(cx.listener(
-                                    move |this, _, window, cx| {
+                                Button::new(key("link"))
+                                    .label("Insert link")
+                                    .xsmall()
+                                    .outline()
+                                    .on_click(cx.listener(move |this, _, window, cx| {
                                         cx.stop_propagation();
-                                        this.insert_reference(run, index, false, window, cx)
-                                    },
-                                )),
+                                        this.insert_reference(fid, false, window, cx)
+                                    })),
                             )
                         })
                         .child(
-                            Button::new(ElementId::NamedInteger(
-                                format!("dismiss-{run}").into(),
-                                index as u64,
-                            ))
-                            .label("Dismiss")
-                            .xsmall()
-                            .ghost()
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
+                            Button::new(key("dismiss"))
+                                .label("Dismiss")
+                                .xsmall()
+                                .ghost()
+                                .on_click(cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
-                                    this.set_item_state(run, index, ItemState::Dismissed, cx)
-                                },
-                            )),
+                                    this.dismiss_finding(fid, cx)
+                                })),
                         ),
                 )
             })
             .into_any_element()
     }
+}
+
+fn section_heading(title: &str, theme: &Theme) -> Div {
+    div()
+        .pt_1()
+        .text_xs()
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(theme.muted_foreground)
+        .child(title.to_string())
 }
 
 /// A shortcut hint for the empty sidebar, such as "⌘E".
