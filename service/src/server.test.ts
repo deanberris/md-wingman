@@ -40,7 +40,7 @@ test("hello reports the protocol version", async () => {
   const c = await connect(fakeRunner);
   c.send({ id: "h", type: "hello" });
   const ev = await c.waitFor((e) => e.id === "h");
-  expect(ev).toMatchObject({ type: "hello", protocol: 1 });
+  expect(ev).toMatchObject({ type: "hello", protocol: 1, auth: "subscription" });
   c.close();
 });
 

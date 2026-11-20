@@ -7,15 +7,25 @@
 //! Build the service first (`cd service && bun install && bun run build`), or
 //! point WINGMAN_SERVICE at the executable. Set WINGMAN_FAKE=1 for canned
 //! replies without calling Claude.
+//!
+//! By default the service uses your Claude subscription (your `claude` login)
+//! and ignores any ANTHROPIC_API_KEY. Pass --api-key first to use the key and
+//! bill the Claude API instead.
 
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
-use wingman_client::{Event, Service, TaskKind};
+use wingman_client::{AuthMode, Event, Service, TaskKind};
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let auth = if args.first().map(String::as_str) == Some("--api-key") {
+        args.remove(0);
+        AuthMode::ApiKey
+    } else {
+        AuthMode::Subscription
+    };
     let (task, text) = match args.as_slice() {
         [kind, text @ ..] if !text.is_empty() => {
             let task = match kind.as_str() {
@@ -34,7 +44,7 @@ fn main() -> ExitCode {
         .unwrap_or_else(|| {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../service/dist/wingman-service")
         });
-    let service = match Service::spawn(Command::new(&exe)) {
+    let service = match Service::spawn(Command::new(&exe), auth) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("could not start {}: {e}", exe.display());
@@ -49,7 +59,11 @@ fn main() -> ExitCode {
         }
     };
     match client.hello() {
-        Ok(version) => eprintln!("connected to wingman-service {version}"),
+        Ok(info) => eprintln!(
+            "connected to wingman-service {} (sign-in: {})",
+            info.version,
+            info.auth.as_env_value()
+        ),
         Err(e) => {
             eprintln!("{e}");
             return ExitCode::FAILURE;
@@ -82,6 +96,6 @@ fn main() -> ExitCode {
 }
 
 fn usage() -> ExitCode {
-    eprintln!("usage: wingman <copy-edit|fact-check|references> <text>");
+    eprintln!("usage: wingman [--api-key] <copy-edit|fact-check|references> <text>");
     ExitCode::from(2)
 }

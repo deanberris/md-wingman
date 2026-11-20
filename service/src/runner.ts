@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { claudeEnv, type AuthMode } from "./auth";
 import { resolveClaudePath } from "./claudePath";
 import type { TaskKind } from "./protocol";
 import { TASKS, buildPrompt } from "./tasks";
@@ -27,11 +28,19 @@ function workDir(): string {
 }
 
 /**
- * The real runner: drives Claude through the Agent SDK. Authentication is
- * whatever Claude Code itself uses on this machine, so a `claude` login with a
- * Claude subscription works, as does ANTHROPIC_API_KEY.
+ * The real runner: drives Claude through the Agent SDK, which runs the user's
+ * Claude Code. `auth` decides which credential Claude Code may see (see auth.ts).
  */
-export const agentRunner: Runner = async ({ task, text, context, signal, onDelta, onStatus }) => {
+export const makeAgentRunner = (auth: AuthMode): Runner => {
+  // Built once, so a bad configuration fails at startup rather than per task.
+  const env = { ...claudeEnv(auth), CLAUDE_AGENT_SDK_CLIENT_APP: "md-wingman/0.1.0" };
+  return (input) => runAgent(input, env);
+};
+
+async function runAgent(
+  { task, text, context, signal, onDelta, onStatus }: RunInput,
+  env: Record<string, string | undefined>,
+): Promise<string> {
   const spec = TASKS[task];
   const abortController = new AbortController();
   const onAbort = () => abortController.abort();
@@ -56,7 +65,7 @@ export const agentRunner: Runner = async ({ task, text, context, signal, onDelta
         settingSources: [],
         cwd: workDir(),
         abortController,
-        env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "md-wingman/0.1.0" },
+        env,
       },
     });
 
@@ -82,7 +91,7 @@ export const agentRunner: Runner = async ({ task, text, context, signal, onDelta
   } finally {
     signal.removeEventListener("abort", onAbort);
   }
-};
+}
 
 /**
  * A stand-in runner for tests and UI work without a Claude login. It echoes a

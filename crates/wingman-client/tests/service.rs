@@ -6,9 +6,13 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use wingman_client::{Event, Service, TaskKind};
+use wingman_client::{AuthMode, Event, Service, TaskKind};
 
 fn fake_service() -> Option<Service> {
+    fake_service_with(AuthMode::Subscription)
+}
+
+fn fake_service_with(auth: AuthMode) -> Option<Service> {
     if Command::new("bun").arg("--version").output().is_err() {
         eprintln!("bun not installed; skipping");
         return None;
@@ -18,7 +22,7 @@ fn fake_service() -> Option<Service> {
     cmd.current_dir(dir)
         .args(["run", "src/main.ts"])
         .env("WINGMAN_FAKE", "1");
-    Some(Service::spawn(cmd).expect("service starts"))
+    Some(Service::spawn(cmd, auth).expect("service starts"))
 }
 
 #[test]
@@ -27,7 +31,9 @@ fn hello_and_copy_edit_stream() {
         return;
     };
     let client = service.connect().unwrap();
-    assert_eq!(client.hello().unwrap(), "0.1.0");
+    let info = client.hello().unwrap();
+    assert_eq!(info.version, "0.1.0");
+    assert_eq!(info.auth, AuthMode::Subscription);
 
     let task = client
         .start_task(TaskKind::CopyEdit, "teh cat sat", None)
@@ -74,4 +80,13 @@ fn service_stops_when_dropped() {
     let path = service.socket_path().to_owned();
     drop(service);
     assert!(!path.exists(), "socket file should be removed");
+}
+
+#[test]
+fn reports_api_key_mode() {
+    let Some(service) = fake_service_with(AuthMode::ApiKey) else {
+        return;
+    };
+    let info = service.connect().unwrap().hello().unwrap();
+    assert_eq!(info.auth, AuthMode::ApiKey);
 }

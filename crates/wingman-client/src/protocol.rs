@@ -12,6 +12,29 @@ pub enum TaskKind {
     FindReferences,
 }
 
+/// Which credential the service's Claude Code uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthMode {
+    /// The user's Claude plan, through their `claude` login. API keys in the
+    /// environment are ignored, so usage never bills the API by accident.
+    #[default]
+    Subscription,
+    /// `ANTHROPIC_API_KEY`, billed to the Claude API. Subscription tokens in
+    /// the environment are ignored.
+    ApiKey,
+}
+
+impl AuthMode {
+    /// The value the service reads from `WINGMAN_AUTH`.
+    pub fn as_env_value(self) -> &'static str {
+        match self {
+            AuthMode::Subscription => "subscription",
+            AuthMode::ApiKey => "api_key",
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum Request<'a> {
@@ -41,6 +64,7 @@ pub enum Event {
     Hello {
         protocol: u32,
         version: String,
+        auth: AuthMode,
     },
     /// A piece of the reply, to append to what has arrived so far.
     Delta {

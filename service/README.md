@@ -19,7 +19,8 @@ bun run build        # single executable at dist/wingman-service
 | `WINGMAN_FAKE=1` | Answer with canned replies instead of calling Claude (for tests and UI work) |
 | `WINGMAN_MODEL` | Claude model to use. Defaults to Claude Code's default |
 | `WINGMAN_CLAUDE_PATH` | Claude Code executable to run (see "Finding Claude Code" in the architecture doc) |
-| `ANTHROPIC_API_KEY` | Use an API key instead of a `claude` login |
+| `WINGMAN_AUTH` | `subscription` (default): use your `claude` login and ignore API keys. `api_key`: use `ANTHROPIC_API_KEY` and bill the Claude API |
+| `ANTHROPIC_API_KEY` | The key used in `api_key` mode. Ignored in subscription mode |
 
 ## Try it from Rust
 

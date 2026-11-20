@@ -12,7 +12,7 @@ Work in progress. The roadmap is in [#1](https://github.com/deanberris/md-wingma
 
 ## Quick start
 
-You need Rust, [Bun](https://bun.sh), and [Claude Code](https://claude.com/claude-code). Sign in to Claude Code with `claude`, or set `ANTHROPIC_API_KEY`.
+You need Rust, [Bun](https://bun.sh), and [Claude Code](https://claude.com/claude-code). Sign in to Claude Code with `claude`. md-wingman uses your Claude subscription by default; to use an API key instead, set `ANTHROPIC_API_KEY` and pass `--api-key` to the example.
 
 ```sh
 cd service && bun install && bun run build && cd ..

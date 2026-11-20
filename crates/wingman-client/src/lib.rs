@@ -7,9 +7,9 @@
 //!
 //! ```no_run
 //! use std::process::Command;
-//! use wingman_client::{Event, Service, TaskKind};
+//! use wingman_client::{AuthMode, Event, Service, TaskKind};
 //!
-//! let service = Service::spawn(Command::new("wingman-service"))?;
+//! let service = Service::spawn(Command::new("wingman-service"), AuthMode::Subscription)?;
 //! let client = service.connect()?;
 //! let task = client.start_task(TaskKind::CopyEdit, "Their going home.", None)?;
 //! for event in task.events() {
@@ -35,8 +35,16 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+pub use protocol::{AuthMode, Event, TaskKind, PROTOCOL_VERSION};
 use protocol::{Envelope, Request};
-pub use protocol::{Event, TaskKind, PROTOCOL_VERSION};
+
+/// What the service reports about itself in the handshake.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceInfo {
+    pub version: String,
+    /// The credential the service is using, so the UI can show it.
+    pub auth: AuthMode,
+}
 
 /// How long [`Service::spawn`] waits for the service to start listening.
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
@@ -49,14 +57,16 @@ pub struct Service {
 
 impl Service {
     /// Starts the service from `command` (typically the `wingman-service`
-    /// executable, with any environment variables already set) and waits until
-    /// it accepts connections.
+    /// executable, with any other environment variables already set) and waits
+    /// until it accepts connections. `auth` picks which credential it uses;
+    /// [`AuthMode::Subscription`] is the default.
     ///
     /// The service's stdin is held open by this process. If the app exits
     /// without dropping the `Service`, stdin closes and the service exits too.
-    pub fn spawn(mut command: Command) -> io::Result<Service> {
+    pub fn spawn(mut command: Command, auth: AuthMode) -> io::Result<Service> {
         let socket_path = default_socket_path();
         let child = command
+            .env("WINGMAN_AUTH", auth.as_env_value())
             .arg("--socket")
             .arg(&socket_path)
             .stdin(Stdio::piped())
@@ -185,8 +195,7 @@ impl Client {
     }
 
     /// Checks the service is alive and speaks this protocol version.
-    /// Returns the service's version string.
-    pub fn hello(&self) -> io::Result<String> {
+    pub fn hello(&self) -> io::Result<ServiceInfo> {
         let (id, rx) = self.shared.register();
         self.shared.send(&Request::Hello { id: &id })?;
         let event = rx
@@ -194,7 +203,11 @@ impl Client {
             .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "no hello reply"));
         self.shared.unregister(&id);
         match event? {
-            Event::Hello { protocol, version } if protocol == PROTOCOL_VERSION => Ok(version),
+            Event::Hello {
+                protocol,
+                version,
+                auth,
+            } if protocol == PROTOCOL_VERSION => Ok(ServiceInfo { version, auth }),
             Event::Hello { protocol, .. } => Err(io::Error::other(format!(
                 "service speaks protocol {protocol}, this app speaks {PROTOCOL_VERSION}"
             ))),

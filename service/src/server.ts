@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, unlinkSync } from "node:fs";
 import type { Socket } from "bun";
 import { PROTOCOL_VERSION, parseRequest, type Event, type Request } from "./protocol";
+import type { AuthMode } from "./auth";
 import type { Runner } from "./runner";
 
 export const SERVICE_VERSION = "0.1.0";
@@ -13,12 +14,14 @@ interface ConnState {
 export interface ServerOptions {
   socketPath: string;
   runner: Runner;
+  /** Reported to clients in the hello reply. */
+  auth?: AuthMode;
   log?: (msg: string) => void;
   /** Called when a client asks the service to shut down. */
   onShutdown?: () => void;
 }
 
-export function startServer({ socketPath, runner, log = () => {}, onShutdown }: ServerOptions) {
+export function startServer({ socketPath, runner, auth = "subscription", log = () => {}, onShutdown }: ServerOptions) {
   // A stale socket file from a crashed run would make listen() fail.
   if (existsSync(socketPath)) unlinkSync(socketPath);
 
@@ -29,7 +32,7 @@ export function startServer({ socketPath, runner, log = () => {}, onShutdown }: 
   const handle = (sock: Socket<ConnState>, req: Request) => {
     switch (req.type) {
       case "hello":
-        send(sock, { id: req.id, type: "hello", protocol: PROTOCOL_VERSION, version: SERVICE_VERSION });
+        send(sock, { id: req.id, type: "hello", protocol: PROTOCOL_VERSION, version: SERVICE_VERSION, auth });
         return;
       case "cancel":
         sock.data.inflight.get(req.target)?.abort();

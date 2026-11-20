@@ -32,7 +32,14 @@ export type Request =
 
 /** Service -> app */
 export type Event =
-  | { id: string; type: "hello"; protocol: number; version: string }
+  | {
+      id: string;
+      type: "hello";
+      protocol: number;
+      version: string;
+      /** Which credential the service uses: the Claude plan, or an API key. */
+      auth: "subscription" | "api_key";
+    }
   | { id: string; type: "delta"; text: string }
   | { id: string; type: "status"; message: string }
   | { id: string; type: "done"; text: string }

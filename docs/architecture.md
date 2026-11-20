@@ -72,11 +72,16 @@ Prompts are in `service/src/tasks.ts`.
 
 ## Authentication
 
-The service uses whatever authentication Claude Code uses on the machine:
-- **A Claude subscription:** run `claude` once and sign in.
-- **An API key:** set `ANTHROPIC_API_KEY` in the environment the app starts with.
+The service never handles credentials itself. Claude Code, run through the official Agent SDK, does the signing in. The service only decides which credential Claude Code is allowed to see. `WINGMAN_AUTH` sets the mode; the Rust side passes it as `AuthMode` to `Service::spawn`:
 
-Anthropic's Agent SDK documentation says: *"Unless previously approved, Anthropic does not allow third party developers to offer claude.ai login or rate limits for their products, including agents built on the Claude Agent SDK."* An API key is the supported route for an app that other people download. See the open decision on #2.
+| mode | how to sign in | billed to | removed from Claude Code's environment |
+|---|---|---|---|
+| `subscription` (default) | run `claude` once and sign in, or set `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` | your Claude plan's usage limits | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_FOUNDRY_API_KEY` |
+| `api_key` | set `ANTHROPIC_API_KEY` | the Claude API | `CLAUDE_CODE_OAUTH_TOKEN` |
+
+In subscription mode, a stray API key in the environment can't quietly switch billing to the API. In `api_key` mode, the service refuses to start without a key. The `hello` reply reports the mode, so the app can show which one is in use.
+
+Anthropic's support article ["Use the Claude Agent SDK with your Claude plan"](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) says Agent SDK usage counts against your plan's limits when you're signed in with your plan. The Agent SDK overview also says: *"Unless previously approved, Anthropic does not allow third party developers to offer claude.ai login or rate limits for their products, including agents built on the Claude Agent SDK."* md-wingman doesn't offer a claude.ai login; users sign in to Claude Code themselves. Before a public release, check whether that wording applies to a downloaded app that defaults to subscription mode.
 
 ## Finding Claude Code
 
