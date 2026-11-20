@@ -85,7 +85,29 @@ Select a passage, or just put the cursor in a paragraph, then press ⌘E to copy
 | ⌘E | Copy-edit the selection, or the paragraph under the cursor |
 | ⇧⌘C | Fact-check the selection, or the paragraph under the cursor |
 | ⇧⌘R | Find references for the selection, or the paragraph under the cursor |
+| ⌥⌘Q | Reflow the paragraph (or selection) to the ruler column |
+| ⌘Z / ⇧⌘Z | Undo / Redo |
 | ⌘Q | Quit |
+
+### Settings
+
+Settings live in `~/Library/Application Support/md-wingman/settings.json`. The
+app writes the file when you change something from the menus or drag the
+divider, and you can edit it by hand. Missing fields take their defaults.
+
+```json
+{
+  "ruler_column": 120,
+  "show_ruler": true,
+  "wrap_at_ruler": true,
+  "assistant_fraction": 0.382
+}
+```
+
+`wrap_at_ruler` soft-wraps text at the ruler instead of at the window edge.
+`assistant_fraction` is the assistant pane's share of the window width. The
+default splits the window at the golden ratio, and dragging the divider
+changes it.
 
 ### Try the assistant without the app
 
