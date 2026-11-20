@@ -3,6 +3,7 @@ name = "md-wingman"
 description = "A Markdown editor with a Claude writing assistant beside it"
 version.workspace = true
 edition.workspace = true
+rust-version = "1.97"
 license.workspace = true
 repository.workspace = true
 
