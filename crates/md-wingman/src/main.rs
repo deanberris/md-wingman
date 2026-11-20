@@ -4,12 +4,16 @@
 
 mod assistant;
 mod document;
+mod reflow;
+mod ruler;
 mod runs;
+mod settings;
 mod suggestions;
 mod workspace;
 
 use std::path::PathBuf;
 
+use gpui_kit::component::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
 use gpui_kit::*;
 
 use crate::workspace::Workspace;
@@ -22,6 +26,8 @@ actions!(
         Save,
         SaveAs,
         TogglePreview,
+        ToggleRuler,
+        Reflow,
         CopyEdit,
         FactCheck,
         FindReferences,
@@ -57,6 +63,7 @@ fn main() {
                 KeyBinding::new(key!("e"), CopyEdit, None),
                 KeyBinding::new(key!("shift-c"), FactCheck, None),
                 KeyBinding::new(key!("shift-r"), FindReferences, None),
+                KeyBinding::new(key!("alt-q"), Reflow, None),
                 KeyBinding::new(key!("q"), Quit, None),
             ]);
             cx.on_action(|_: &Quit, cx| cx.quit());
@@ -69,7 +76,21 @@ fn main() {
                     MenuItem::action("Save", Save),
                     MenuItem::action("Save As…", SaveAs),
                 ]),
-                Menu::new("View").items([MenuItem::action("Toggle Preview", TogglePreview)]),
+                Menu::new("Edit").items([
+                    MenuItem::action("Undo", Undo),
+                    MenuItem::action("Redo", Redo),
+                    MenuItem::separator(),
+                    MenuItem::action("Cut", Cut),
+                    MenuItem::action("Copy", Copy),
+                    MenuItem::action("Paste", Paste),
+                    MenuItem::action("Select All", SelectAll),
+                    MenuItem::separator(),
+                    MenuItem::action("Reflow Paragraph", Reflow),
+                ]),
+                Menu::new("View").items([
+                    MenuItem::action("Toggle Preview", TogglePreview),
+                    MenuItem::action("Toggle Ruler", ToggleRuler),
+                ]),
                 Menu::new("Assistant").items([
                     MenuItem::action("Copy-edit", CopyEdit),
                     MenuItem::action("Fact-check", FactCheck),
@@ -84,7 +105,7 @@ fn main() {
                 }),
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                     None,
-                    size(px(1200.), px(800.)),
+                    size(px(1680.), px(1000.)),
                     cx,
                 ))),
                 ..Default::default()

@@ -4,7 +4,10 @@
 use std::path::PathBuf;
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Editor, EditorState, InputEvent};
+use gpui_kit::component::input::{EditorState, InputEvent};
+use gpui_kit::component::resizable::{
+    h_resizable, resizable_panel, ResizablePanelEvent, ResizableState,
+};
 use gpui_kit::component::text::TextView;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -12,9 +15,12 @@ use gpui_kit::*;
 
 use crate::assistant::{auth_mode_from_env, Assistant, ServiceStatus};
 use crate::document::{word_count, Document};
+use crate::settings::Settings;
 use crate::{NewFile, Open, Save, SaveAs, TogglePreview};
 
-const SIDEBAR_WIDTH: f32 = 360.;
+/// The narrowest and widest the assistant pane can be dragged to.
+const SIDEBAR_MIN: f32 = 280.;
+const EDITOR_MIN: f32 = 360.;
 /// Comfortable line length for reading the preview.
 const PREVIEW_MAX_WIDTH: f32 = 720.;
 
@@ -38,6 +44,9 @@ pub struct Workspace {
     notice: Option<SharedString>,
     pub(crate) runs: Vec<crate::runs::TaskRun>,
     pub(crate) next_run_id: usize,
+    pub(crate) settings: Settings,
+    /// The editor/assistant split.
+    split: Entity<ResizableState>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -52,8 +61,21 @@ impl Workspace {
                 .soft_wrap(true)
                 .placeholder("Start writing…")
         });
-        let subscriptions = vec![cx.subscribe_in(&editor, window, Self::on_editor_event)];
+        let split = cx.new(|_| ResizableState::default());
+        let subscriptions = vec![
+            cx.subscribe_in(&editor, window, Self::on_editor_event),
+            cx.subscribe(&split, |this, split, _: &ResizablePanelEvent, cx| {
+                // Remember the assistant pane's share of the width.
+                let sizes = split.read(cx).sizes().clone();
+                let total: f32 = sizes.iter().map(|s| f32::from(*s)).sum();
+                if let (Some(last), true) = (sizes.last(), total > 0.) {
+                    this.settings.assistant_fraction = f32::from(*last) / total;
+                    this.save_settings(cx);
+                }
+            }),
+        ];
 
+        let (settings, settings_error) = Settings::load();
         let mut this = Self {
             focus_handle: cx.focus_handle(),
             editor,
@@ -66,10 +88,15 @@ impl Workspace {
             notice: None,
             runs: Vec::new(),
             next_run_id: 1,
+            settings,
+            split,
             _subscriptions: subscriptions,
         };
         if let Some(path) = path {
             this.open_path(path, window, cx);
+        }
+        if settings_error.is_some() {
+            this.notice = settings_error.map(Into::into);
         }
         this.start_assistant(cx);
         this.editor.update(cx, |state, cx| state.focus(window, cx));
@@ -303,19 +330,15 @@ impl Workspace {
             )
     }
 
-    fn render_document(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn save_settings(&mut self, cx: &mut Context<Self>) {
+        if let Err(e) = self.settings.save() {
+            self.set_notice(format!("Couldn't save settings: {e}"), cx);
+        }
+    }
+
+    fn render_document(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         match self.mode {
-            ViewMode::Raw => div()
-                .size_full()
-                .px_6()
-                .py_4()
-                .child(
-                    Editor::new(&self.editor)
-                        .appearance(false)
-                        .bordered(false)
-                        .h_full(),
-                )
-                .into_any_element(),
+            ViewMode::Raw => self.render_raw_editor(window, cx),
             ViewMode::Preview => {
                 let text = self.text(cx);
                 div()
@@ -372,9 +395,7 @@ impl Workspace {
     ) -> impl IntoElement {
         let theme = cx.theme();
         v_flex()
-            .w(px(SIDEBAR_WIDTH))
-            .h_full()
-            .flex_none()
+            .size_full()
             .border_l_1()
             .border_color(theme.border)
             .bg(theme.sidebar)
@@ -401,7 +422,7 @@ impl Focusable for Workspace {
 }
 
 impl Render for Workspace {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let sidebar_body = self.render_sidebar_body(cx);
         let (background, foreground) = (cx.theme().background, cx.theme().foreground);
         v_flex()
@@ -413,26 +434,43 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_save))
             .on_action(cx.listener(Self::on_save_as))
             .on_action(cx.listener(Self::on_toggle_preview))
+            .on_action(cx.listener(Self::on_toggle_ruler))
+            .on_action(cx.listener(Self::on_reflow))
             .on_action(cx.listener(Self::on_copy_edit))
             .on_action(cx.listener(Self::on_fact_check))
             .on_action(cx.listener(Self::on_find_references))
             .size_full()
             .bg(background)
             .text_color(foreground)
-            .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .h_full()
-                            .child(self.render_toolbar(cx))
-                            .child(div().flex_1().min_h_0().child(self.render_document(cx))),
-                    )
-                    .child(self.render_sidebar_frame(sidebar_body, cx)),
-            )
+            .child({
+                // Initial sizes only; after that the split keeps what the
+                // user dragged it to.
+                let width = f32::from(window.viewport_size().width);
+                let fraction = self.settings.assistant_fraction;
+                div().flex_1().min_h_0().child(
+                    h_resizable("split")
+                        .with_state(&self.split)
+                        .child(
+                            resizable_panel()
+                                .size(px(width * (1. - fraction)))
+                                .size_range(px(EDITOR_MIN)..Pixels::MAX)
+                                .child(
+                                    v_flex().size_full().child(self.render_toolbar(cx)).child(
+                                        div()
+                                            .flex_1()
+                                            .min_h_0()
+                                            .child(self.render_document(window, cx)),
+                                    ),
+                                ),
+                        )
+                        .child(
+                            resizable_panel()
+                                .size(px(width * fraction))
+                                .size_range(px(SIDEBAR_MIN)..Pixels::MAX)
+                                .child(self.render_sidebar_frame(sidebar_body, cx)),
+                        ),
+                )
+            })
             .child(self.render_status_bar(cx))
     }
 }
