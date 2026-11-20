@@ -1,8 +1,57 @@
 # md-wingman
 
-A native macOS Markdown editor with a Claude writing assistant beside it. The assistant fact-checks, finds references and suggests copy edits.
+A native macOS Markdown editor with Claude always on hand in a sidebar, to
+fact-check what you write, find references for it, and suggest copy edits.
 
-Work in progress. The roadmap is in [#1](https://github.com/deanberris/md-wingman/issues/1).
+> **Status: early development.** The editor, copy-editing and fact-checking
+> work. Reference lookup is next.
+
+## What it is meant to be
+
+md-wingman is a writing tool first. You write Markdown in a calm, minimal
+editor, and an assistant sits beside the text, ready when you want a second
+opinion and out of the way when you don't.
+
+Assistant features, in priority order:
+
+- **Copy-editing.** Select a sentence or paragraph and get suggested edits
+  inline, which you accept or reject one at a time.
+- **Fact-checking.** Flag claims in the selection that look doubtful, with an
+  explanation and sources in the sidebar.
+- **Reference lookup.** Search the web for sources that support or challenge a
+  claim, and insert the one you pick as a Markdown link or footnote.
+
+Bibliography management may come later, but it is out of scope for the first
+version.
+
+## Design
+
+- **Native macOS app written in Rust**, with [gpui](https://gpui.rs) and
+  gpui-component. The [toolkit choice](docs/toolkit-choice.md) explains why.
+- **Minimal, TUI-inspired look** with careful typography.
+- **Raw and preview modes.** A toggle switches between the raw Markdown and a
+  rendered preview.
+
+## Architecture
+
+```
+┌────────────────────────┐   requests (Unix socket)   ┌────────────────────────┐
+│ md-wingman (Rust GUI)  │ ─────────────────────────▶ │ assistant service      │
+│ editor, preview,       │                            │ Claude Agent SDK       │
+│ assistant sidebar      │ ◀───────────────────────── │ TypeScript, Bun binary │
+└────────────────────────┘      streamed replies      └────────────────────────┘
+   starts / stops service                                  calls Claude
+```
+
+- The **Rust app** is the editor and the sidebar. It starts and stops the
+  assistant service and talks to it over a local Unix socket.
+- The **assistant service** is a small local background process built on the
+  Claude Agent SDK. It makes all the model calls, using your own Claude
+  subscription login by default, or an API key if you choose. It is written in
+  TypeScript and compiled to a single executable with Bun, so it can ship
+  inside the app bundle.
+
+More detail is in [docs/architecture.md](docs/architecture.md).
 
 ## Run it on a Mac
 
@@ -37,20 +86,35 @@ Select a passage, or just put the cursor in a paragraph, then press ⌘E to copy
 | ⇧⌘C | Fact-check the selection, or the paragraph under the cursor |
 | ⌘Q | Quit |
 
-## Layout
-
-- `crates/md-wingman`: the app, built with [gpui](https://gpui.rs) and [gpui-component](https://github.com/longbridge/gpui-kit)
-- `crates/wingman-client`: Rust client for the assistant service
-- `service/`: the assistant service, in TypeScript on the Claude Agent SDK
-- `docs/`: [architecture](docs/architecture.md) and the [UI toolkit choice](docs/toolkit-choice.md)
-
-## Try the assistant without the app
+### Try the assistant without the app
 
 ```sh
 cd service && bun install && bun run build && cd ..
 cargo run -p wingman-client --example wingman -- fact-check "The Eiffel Tower opened in 1899."
 ```
 
-## Licence
+## Layout
 
-Apache 2.0. See [LICENSE](LICENSE).
+- `crates/md-wingman`: the app, built with [gpui](https://gpui.rs) and [gpui-component](https://github.com/longbridge/gpui-component)
+- `crates/wingman-client`: Rust client for the assistant service
+- `service/`: the assistant service, in TypeScript on the Claude Agent SDK
+- `docs/`: [architecture](docs/architecture.md) and the [UI toolkit choice](docs/toolkit-choice.md)
+
+## Roadmap
+
+Work is tracked in GitHub Issues:
+
+- [#1](../../issues/1) Roadmap for the first version
+- [#2](../../issues/2) Background service spike and UI toolkit choice
+- [#3](../../issues/3) Minimal editor with raw/preview toggle
+- [#4](../../issues/4) Copy-editing and fact-checking
+- [#5](../../issues/5) Reference lookup
+
+## Contributing
+
+The project is at an early stage. If you are interested, the issues above
+are the best place to follow along or start a discussion.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
