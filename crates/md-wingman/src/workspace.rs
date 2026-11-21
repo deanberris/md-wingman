@@ -86,6 +86,10 @@ pub struct Workspace {
     pub(crate) font_choices: Option<crate::appearance::FontChoices>,
     pub(crate) grader: Arc<dyn Grader>,
     persist_settings: bool,
+    /// A save prompt is up, before quitting or closing the window.
+    asking_to_save: bool,
+    /// The user agreed to close the window, so let it close.
+    close_confirmed: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -162,8 +166,16 @@ impl Workspace {
             font_choices: None,
             grader: services.grader,
             persist_settings: services.persist_settings,
+            asking_to_save: false,
+            close_confirmed: false,
             _subscriptions: subscriptions,
         };
+        crate::quit::register(window.window_handle(), cx.weak_entity(), cx);
+        let weak = cx.weak_entity();
+        window.on_window_should_close(cx, move |window, cx| {
+            weak.update(cx, |ws, cx| ws.should_close(window, cx))
+                .unwrap_or(true)
+        });
         this.apply_appearance(window, cx);
         if let Some(path) = path {
             this.open_path(path, window, cx);
@@ -209,7 +221,7 @@ impl Workspace {
             self.revision += 1;
             let dirty = self.document.is_dirty(&self.text(cx));
             if dirty != self.dirty {
-                self.dirty = dirty;
+                self.set_dirty(dirty);
                 window.set_window_title(&self.title());
             }
             self.reconcile_findings(cx);
@@ -240,13 +252,13 @@ impl Workspace {
         cx.notify();
     }
 
-    fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         match Document::open(&path) {
             Ok((doc, text)) => {
                 self.document = doc;
                 self.editor
                     .update(cx, |state, cx| state.set_value(text, window, cx));
-                self.dirty = false;
+                self.set_dirty(false);
                 self.revision += 1;
                 self.notice = None;
                 window.set_window_title(&self.title());
@@ -270,7 +282,7 @@ impl Workspace {
             state.set_value(text.to_string(), window, cx)
         });
         self.document = Document::untitled();
-        self.dirty = false;
+        self.set_dirty(false);
         self.revision += 1;
         self.continuous_baseline(cx);
         cx.notify();
@@ -296,7 +308,7 @@ impl Workspace {
                     // Fact-checks follow the document to its new name.
                     self.save_claims(cx);
                 }
-                self.dirty = false;
+                self.set_dirty(false);
                 self.notice = Some(format!("Saved {}", self.document.display_name()).into());
                 window.set_window_title(&self.title());
                 cx.notify();
@@ -318,7 +330,7 @@ impl Workspace {
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.load_claims(cx);
         self.continuous_baseline(cx);
-        self.dirty = false;
+        self.set_dirty(false);
         self.revision += 1;
         window.set_window_title(&self.title());
         cx.notify();
@@ -346,14 +358,27 @@ impl Workspace {
     }
 
     fn on_save(&mut self, _: &Save, window: &mut Window, cx: &mut Context<Self>) {
-        if self.document.path().is_some() {
-            self.save_to(None, window, cx);
-        } else {
-            self.on_save_as(&SaveAs, window, cx);
-        }
+        self.save(window, cx).detach();
     }
 
     fn on_save_as(&mut self, _: &SaveAs, window: &mut Window, cx: &mut Context<Self>) {
+        self.save_as(window, cx).detach();
+    }
+
+    /// Saves to the document's file, or asks where for an untitled one.
+    /// Resolves to whether it saved.
+    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Task<bool> {
+        if self.document.path().is_some() {
+            self.save_to(None, window, cx);
+            Task::ready(!self.dirty)
+        } else {
+            self.save_as(window, cx)
+        }
+    }
+
+    /// Asks where to save, then saves there. Resolves to whether it saved;
+    /// cancelling the dialog doesn't.
+    fn save_as(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Task<bool> {
         let dir = self
             .document
             .path()
@@ -368,11 +393,84 @@ impl Workspace {
         let path = cx.prompt_for_new_path(&dir, Some(&name));
         cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(path))) = path.await else {
-                return;
+                return false;
             };
-            let _ = this.update_in(cx, |this, window, cx| this.save_to(Some(path), window, cx));
+            this.update_in(cx, |this, window, cx| {
+                this.save_to(Some(path), window, cx);
+                !this.dirty
+            })
+            .unwrap_or(false)
+        })
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty;
+        crate::quit::set_unsaved(dirty);
+    }
+
+    /// Before quitting or closing: with unsaved changes, asks whether to
+    /// save them. Resolves to true when it's fine to go on (saved, or the
+    /// user chose Don't Save), false when the user cancelled or the save
+    /// didn't happen.
+    pub(crate) fn confirm_discard(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Task<bool> {
+        if !self.dirty {
+            return Task::ready(true);
+        }
+        if self.asking_to_save {
+            // Already asking; let that answer decide.
+            return Task::ready(false);
+        }
+        self.asking_to_save = true;
+        let message = format!(
+            "Do you want to save the changes you made to “{}”?",
+            self.document.display_name()
+        );
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            &message,
+            Some("Your changes will be lost if you don't save them."),
+            &[
+                PromptButton::ok("Save"),
+                PromptButton::new("Don't Save"),
+                PromptButton::cancel("Cancel"),
+            ],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let go_on = match answer.await {
+                Ok(0) => match this.update_in(cx, |this, window, cx| this.save(window, cx)) {
+                    Ok(saved) => saved.await,
+                    Err(_) => false,
+                },
+                Ok(1) => true,
+                _ => false,
+            };
+            let _ = this.update(cx, |this, _| this.asking_to_save = false);
+            go_on
+        })
+    }
+
+    /// The window's close button: closes at once when nothing is unsaved,
+    /// otherwise asks first and closes once the user says so.
+    fn should_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if !self.dirty || self.close_confirmed {
+            return true;
+        }
+        let answer = self.confirm_discard(window, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            if answer.await {
+                let _ = this.update_in(cx, |this, window, _| {
+                    this.close_confirmed = true;
+                    window.remove_window();
+                });
+            }
         })
         .detach();
+        false
     }
 
     fn on_toggle_preview(

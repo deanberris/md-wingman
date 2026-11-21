@@ -9,6 +9,7 @@
 mod assistant;
 mod continuous;
 mod findings;
+mod quit;
 mod view;
 
 use std::collections::VecDeque;
@@ -273,6 +274,7 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
     let (window, workspace) = cx.update(|cx| {
         gpui_kit::init(cx);
         crate::bind_keys(cx);
+        crate::quit::init(cx);
         let bounds = Bounds {
             origin: Point::default(),
             size: size(px(width), px(1000.)),
