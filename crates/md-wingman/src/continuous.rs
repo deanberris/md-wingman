@@ -80,7 +80,33 @@ pub struct Continuous {
 pub struct GradeReport {
     /// The paragraph's first few words.
     pub excerpt: String,
+    /// Its fingerprint, to match the checks that follow.
+    pub fingerprint: u64,
     pub grades: Grades,
+    /// The checks the grades started, and how each one went.
+    pub checks: Vec<(TaskKind, CheckStatus)>,
+}
+
+/// How a check started by a grade is going.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CheckStatus {
+    Running,
+    /// Finished, with this many suggestions or claims.
+    Done(usize),
+    Failed(String),
+}
+
+impl GradeReport {
+    pub fn status(&self, kind: TaskKind) -> Option<&CheckStatus> {
+        self.checks.iter().find(|(k, _)| *k == kind).map(|(_, s)| s)
+    }
+
+    fn set(&mut self, kind: TaskKind, status: CheckStatus) {
+        match self.checks.iter_mut().find(|(k, _)| *k == kind) {
+            Some((_, s)) => *s = status,
+            None => self.checks.push((kind, status)),
+        }
+    }
 }
 
 /// What continuous mode does with one kind of help after Jev's grade.
@@ -485,18 +511,51 @@ impl Workspace {
         };
         let sent = text[passage.clone()].to_string();
         self.continuous.mark(kind, &sent);
-        if let Some(id) = self.start_run_on(kind, passage, true, cx) {
-            self.continuous.running = Some((id, sent));
-        }
+        let status = match self.start_run_on(kind, passage, true, cx) {
+            Some(id) => {
+                self.continuous.running = Some((id, sent.clone()));
+                CheckStatus::Running
+            }
+            None => {
+                // It didn't start (the assistant said why): try again after
+                // the next edit rather than count it as checked.
+                self.continuous
+                    .checked
+                    .remove(&(kind_key(kind), fingerprint(&sent)));
+                CheckStatus::Failed(
+                    self.notice
+                        .as_ref()
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| "it couldn't start".into()),
+                )
+            }
+        };
+        self.continuous_report(&sent, kind, status);
         cx.notify();
     }
 
-    /// Called when a background run ends, however it ended.
+    /// Notes how a check of `paragraph` is going, if it's the one Jev
+    /// graded last.
+    fn continuous_report(&mut self, paragraph: &str, kind: TaskKind, status: CheckStatus) {
+        let fp = fingerprint(paragraph);
+        if let Some(report) = self
+            .continuous
+            .last_grade
+            .as_mut()
+            .filter(|r| r.fingerprint == fp)
+        {
+            report.set(kind, status);
+        }
+    }
+
+    /// Called when a background run ends, however it ended, with how many
+    /// findings it made.
     pub(crate) fn continuous_run_ended(
         &mut self,
         id: usize,
         kind: TaskKind,
         failure: Option<String>,
+        found: usize,
         cx: &mut Context<Self>,
     ) {
         let Some((running, sent)) = self.continuous.running.take() else {
@@ -506,6 +565,14 @@ impl Workspace {
             self.continuous.running = Some((running, sent));
             return;
         }
+        let status = match &failure {
+            None => CheckStatus::Done(found),
+            Some(m) if m == "cancelled" => {
+                CheckStatus::Failed("stopped: the paragraph changed".into())
+            }
+            Some(m) => CheckStatus::Failed(m.clone()),
+        };
+        self.continuous_report(&sent, kind, status);
         match failure {
             None => {
                 if self.continuous.run_backoff != Duration::ZERO {
@@ -619,7 +686,12 @@ impl Workspace {
                 self.continuous.grades.insert(fp, grades);
                 self.continuous.backoff = Duration::ZERO;
                 self.continuous.retry_at = None;
-                self.continuous.last_grade = Some(GradeReport { excerpt, grades });
+                self.continuous.last_grade = Some(GradeReport {
+                    excerpt,
+                    fingerprint: fp,
+                    grades,
+                    checks: Vec::new(),
+                });
                 self.continuous_tick(cx);
             }
             Err(JevError::BadKey) => {

@@ -9,6 +9,7 @@ mod document;
 mod findings;
 mod jev;
 mod prefilter;
+mod quit;
 mod reflow;
 mod review;
 mod ruler;
@@ -94,7 +95,7 @@ fn main() {
             gpui_kit::init(cx);
 
             bind_keys(cx);
-            cx.on_action(|_: &Quit, cx| cx.quit());
+            quit::init(cx);
             cx.set_menus([
                 Menu::new("md-wingman").items([MenuItem::action("Quit md-wingman", Quit)]),
                 Menu::new("File").items([

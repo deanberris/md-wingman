@@ -24,6 +24,10 @@ dirs = "6"
 ureq = { version = "3", features = ["json"] }
 keyring = { version = "3", features = ["apple-native"] }
 
+# Catching macOS's own requests to quit, to ask about unsaved changes.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+
 [dev-dependencies]
 tempfile = "3"
 # The headless UI test harness (`#[gpui_kit::test]`, `gpui_kit::test`).
