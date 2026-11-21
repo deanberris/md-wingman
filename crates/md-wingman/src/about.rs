@@ -15,7 +15,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The project on GitHub.
 pub const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 /// The project website, served by GitHub Pages from `site/`.
-pub const WEBSITE: &str = "https://deanberris.github.io/md-wingman/";
+pub const WEBSITE: &str = "https://md-wingman.dev/";
 /// The license, by name and in full.
 pub const LICENSE_NAME: &str = "Apache License 2.0";
 pub const LICENSE_URL: &str = "https://github.com/deanberris/md-wingman/blob/main/LICENSE";
@@ -328,6 +328,6 @@ mod tests {
     #[::core::prelude::v1::test]
     fn links_point_at_the_project() {
         assert_eq!(REPOSITORY, "https://github.com/deanberris/md-wingman");
-        assert_eq!(display_url(WEBSITE), "deanberris.github.io/md-wingman");
+        assert_eq!(display_url(WEBSITE), "md-wingman.dev");
     }
 }
