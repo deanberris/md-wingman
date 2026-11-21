@@ -477,3 +477,90 @@ fn grades_show_in_the_pane_while_you_keep_typing(cx: &mut TestAppContext) {
     h.type_text(cx, " Still typing.");
     assert!(h.text(cx).ends_with("needs nothing at all. Still typing."));
 }
+
+#[gpui_kit::test]
+fn a_high_grade_starts_the_check_and_the_pane_follows_it(cx: &mut TestAppContext) {
+    use crate::continuous::CheckStatus;
+    let h = open(
+        cx,
+        Setup {
+            text: FIRST,
+            settings: settings(true),
+            ..Default::default()
+        },
+    );
+    answer_copy_edits(&h);
+    h.jev.grade_with(|_| Ok(grades(0.9, 0.1, 0.)));
+    write_second(&h, cx, "Then I wrote teh second one, and it ends here.");
+    h.wait(cx, PAUSE + 10);
+    // The copy-edit started by itself, and the pane says how it went.
+    assert_eq!(h.assistant.request_count(), 1);
+    let status = h.read(cx, |ws, _| {
+        ws.continuous
+            .last_grade()
+            .and_then(|r| r.status(TaskKind::CopyEdit).cloned())
+    });
+    assert_eq!(status, Some(CheckStatus::Done(1)));
+}
+
+#[gpui_kit::test]
+fn a_check_that_fails_says_why_in_the_pane(cx: &mut TestAppContext) {
+    use crate::continuous::CheckStatus;
+    let h = open(
+        cx,
+        Setup {
+            text: FIRST,
+            settings: settings(true),
+            ..Default::default()
+        },
+    );
+    h.assistant.answer_with(|_, _| {
+        vec![wingman_client::Event::Error {
+            message: "Not signed in to Claude".into(),
+        }]
+    });
+    h.jev.grade_with(|_| Ok(grades(0.9, 0.1, 0.)));
+    write_second(&h, cx, "Then I wrote teh second one, and it ends here.");
+    h.wait(cx, PAUSE + 10);
+    let status = h.read(cx, |ws, _| {
+        ws.continuous
+            .last_grade()
+            .and_then(|r| r.status(TaskKind::CopyEdit).cloned())
+    });
+    assert_eq!(
+        status,
+        Some(CheckStatus::Failed("Not signed in to Claude".into()))
+    );
+}
+
+#[gpui_kit::test]
+fn every_check_above_the_bar_starts_by_itself(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            text: FIRST,
+            settings: Settings {
+                continuous_fact_check: true,
+                ..settings(true)
+            },
+            ..Default::default()
+        },
+    );
+    answer_copy_edits(&h);
+    h.jev.grade_with(|_| Ok(grades(0.9, 0.8, 0.85)));
+    write_second(
+        &h,
+        cx,
+        "Rust topped the survey for nine years, and teh rest followed.",
+    );
+    h.wait(cx, PAUSE + 10);
+    let kinds: Vec<TaskKind> = h.assistant.requests().into_iter().map(|(k, _)| k).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            TaskKind::CopyEdit,
+            TaskKind::FactCheck,
+            TaskKind::FindReferences
+        ]
+    );
+}

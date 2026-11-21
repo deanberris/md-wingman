@@ -14,7 +14,7 @@ use gpui_kit::*;
 use wingman_client::{Event, TaskKind};
 
 use crate::assistant::{task_title, ServiceStatus};
-use crate::continuous::{verdicts, Verdict};
+use crate::continuous::{verdicts, CheckStatus, Verdict};
 use crate::findings::{relation_color, verdict_color, Finding, FindingKind, FindingState};
 use crate::suggestions::{
     locate_all, passage_range, CopyEditReply, FactCheckReply, ReferencesReply,
@@ -193,7 +193,7 @@ impl Workspace {
                 f.run = None;
             }
         }
-        self.continuous_run_ended(id, run.kind, failure, cx);
+        self.continuous_run_ended(id, run.kind, failure, run.items.len(), cx);
     }
 
     /// Each card's kind and state, top first, such as "done: 2 suggested
@@ -1033,10 +1033,22 @@ impl Workspace {
             );
             let rows = verdicts(&report.grades, &self.continuous_kinds(), threshold);
             for (kind, score, verdict) in &rows {
-                let (note, color) = match verdict {
-                    Verdict::Check => ("checking", theme.foreground),
-                    Verdict::Skip => ("not needed", theme.muted_foreground),
-                    Verdict::Off => ("off as you write", theme.muted_foreground),
+                let (note, color): (String, _) = match (verdict, report.status(*kind)) {
+                    (Verdict::Check, None) => ("queued".into(), theme.foreground),
+                    (Verdict::Check, Some(CheckStatus::Running)) => {
+                        ("checking…".into(), theme.foreground)
+                    }
+                    (Verdict::Check, Some(CheckStatus::Done(0))) => {
+                        ("checked: nothing found".into(), theme.foreground)
+                    }
+                    (Verdict::Check, Some(CheckStatus::Done(n))) => {
+                        (format!("checked: {n} below"), theme.foreground)
+                    }
+                    (Verdict::Check, Some(CheckStatus::Failed(m))) => {
+                        (format!("didn't run: {m}"), theme.danger)
+                    }
+                    (Verdict::Skip, _) => ("not needed".into(), theme.muted_foreground),
+                    (Verdict::Off, _) => ("off as you write".into(), theme.muted_foreground),
                 };
                 panel = panel.child(
                     h_flex()
@@ -1047,7 +1059,7 @@ impl Workspace {
                         })
                         .child(div().w(px(80.)).child(task_label(*kind)))
                         .child(div().w(px(40.)).child(format!("{:.0}%", score * 100.)))
-                        .child(div().child(note)),
+                        .child(div().flex_1().min_w_0().child(note)),
                 );
             }
             if !rows.iter().any(|(_, _, v)| *v == Verdict::Check) {
