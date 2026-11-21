@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Event, TaskKind } from "./protocol";
-import { fakeRunner, makeAgentRunner, type QueryFn } from "./runner";
+import { NOT_SIGNED_IN, fakeRunner, makeAgentRunner, type QueryFn } from "./runner";
 import { startServer } from "./server";
 import { TASKS } from "./tasks";
 
@@ -164,10 +164,10 @@ for (const kind of KINDS) {
   });
 }
 
-test("a signed-out Claude Code reaches the app as its own error", async () => {
+test("a signed-out Claude Code reaches the app as steps to sign in", async () => {
   const sdk = scripted([result({ is_error: true, result: "Not logged in · Please run /login" })]);
   const events = await runTask(sdk.query, "copy_edit", "teh cat");
-  expect(events.at(-1)).toEqual({ id: "t", type: "error", message: "Not logged in · Please run /login" });
+  expect(events.at(-1)).toEqual({ id: "t", type: "error", message: NOT_SIGNED_IN });
 });
 
 test("a result without the structured reply is an error, not an empty done", async () => {
