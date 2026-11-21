@@ -5,6 +5,7 @@
 mod appearance;
 mod assistant;
 mod continuous;
+mod dictation;
 mod document;
 mod findings;
 mod jev;
