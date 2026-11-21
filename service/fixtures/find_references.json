@@ -1,0 +1,28 @@
+{
+  "passage": "Coffee improves short-term memory. Most people drink it in the morning.",
+  "data": {
+    "summary": "One study and some background.",
+    "references": [
+      {
+        "quote": "Coffee improves short-term memory.",
+        "title": "Caffeine and memory consolidation",
+        "authors": "Borota, D. et al.",
+        "year": "2014",
+        "publisher": "Nature Neuroscience",
+        "url": "https://example.com/caffeine-memory",
+        "relation": "supports",
+        "note": "A controlled study of caffeine after learning."
+      },
+      {
+        "quote": "Most people drink it in the morning.",
+        "title": "Coffee",
+        "authors": "",
+        "year": "",
+        "publisher": "example.org",
+        "url": "https://example.org/coffee",
+        "relation": "background",
+        "note": "General background."
+      }
+    ]
+  }
+}
