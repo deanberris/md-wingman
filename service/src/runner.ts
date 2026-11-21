@@ -1,11 +1,11 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import { claudeEnv, type AuthMode } from "./auth";
 import { resolveClaudePath } from "./claudePath";
 import type { TaskKind } from "./protocol";
-import { TASKS, buildPrompt } from "./tasks";
+import { TASKS, buildPrompt, type TaskSpec } from "./tasks";
 
 export interface RunInput {
   task: TaskKind;
@@ -89,13 +89,7 @@ async function runAgent(
           onStatus(ev.content_block.name === "StructuredOutput" ? "Writing up" : `Using ${ev.content_block.name}`);
         }
       } else if (msg.type === "result") {
-        if (msg.subtype !== "success") throw new Error(`Claude stopped early (${msg.subtype})`);
-        if (spec.schema) {
-          if (msg.structured_output === undefined) throw new Error("Claude didn't return a structured reply");
-          const data = msg.structured_output as { summary?: unknown };
-          return { text: typeof data.summary === "string" ? data.summary : "", data };
-        }
-        return { text: msg.result || streamed };
+        return taskResult(msg, spec, streamed);
       }
     }
     if (signal.aborted) throw new Error("cancelled");
@@ -103,6 +97,29 @@ async function runAgent(
   } finally {
     signal.removeEventListener("abort", onAbort);
   }
+}
+
+/**
+ * Turns the SDK's result message into the task's reply, or throws with a
+ * message the writer can act on.
+ *
+ * A turn that ends on an API error (for example "Not logged in · Please run
+ * /login") still has subtype "success", but with `is_error` set and the error
+ * text in `result`, so check that before looking for the structured reply.
+ */
+export function taskResult(
+  msg: Pick<SDKResultMessage, "subtype" | "is_error"> & { result?: string; structured_output?: unknown },
+  spec: Pick<TaskSpec, "schema">,
+  streamed = "",
+): RunResult {
+  if (msg.subtype !== "success") throw new Error(`Claude stopped early (${msg.subtype})`);
+  if (msg.is_error) throw new Error(msg.result?.trim() || "Claude returned an error");
+  if (spec.schema) {
+    if (msg.structured_output === undefined) throw new Error("Claude didn't return a structured reply");
+    const data = msg.structured_output as { summary?: unknown };
+    return { text: typeof data.summary === "string" ? data.summary : "", data };
+  }
+  return { text: msg.result || streamed };
 }
 
 /**
