@@ -54,16 +54,17 @@ const QUESTIONS: [(&str, &str, &[&str]); 3] = [
          contain transcription errors. Hold it to your publication's standard: how much \
          copy-editing does it need before it could run? Any misspelling, typo, wrong or \
          missing word, grammar mistake or punctuation error is an error, however small: \
-         even a single one means the paragraph needs an edit. Ignore Markdown syntax.",
+         even a single one means the paragraph needs an edit. Check the spelling of every word \
+         before you judge the style. Ignore Markdown syntax.",
         // Six levels: 0, 20, 40, 60, 80 and 100%. Any real error is 80% or
         // more; style alone stays at 60% or less.
         &[
-            "None: no errors, and it reads cleanly",
-            "No errors; a word choice could be polished",
-            "No errors; a sentence is awkward and worth rephrasing",
-            "No errors, but wordy or hard to follow in places",
-            "Errors: at least one typo, misspelling, wrong or missing word, grammar or punctuation error",
-            "Many errors, or hard to read",
+            "No errors at all, and it reads cleanly",
+            "No errors at all; a word choice could be polished",
+            "No errors at all; some phrasing is awkward or wordy",
+            "No errors at all, but a sentence is hard to follow",
+            "One error: a single misspelled word, typo, wrong or missing word, or grammar or punctuation slip",
+            "Two or more errors, or hard to read",
         ],
     ),
     (
@@ -292,6 +293,7 @@ mod tests {
         let samples = [
             ("typos", [true, false, false], "I went to the confrence last weak and it was realy usefull. I enjoyed the talks alot and met some grate people."),
             ("one typo", [true, false, false], "I spent Saturday morning rewriting the parser, and by lunch it handled every file I recieved from the team."),
+            ("one slip", [true, false, false], "We moved the build to the new machine last month, and its been noticeably faster ever since."),
             ("clean", [false, false, false], "I spent Saturday morning rewriting the parser, and by lunch it handled every file I received from the team."),
             ("expert view", [false, true, true], "Most of the growth in cloud spending now comes from AI workloads, and the big providers are building data centres faster than the power grid can keep up."),
             ("statistic", [false, true, true], "Rust has topped Stack Overflow's survey as the most admired language for nine years running."),
