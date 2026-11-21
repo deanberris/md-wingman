@@ -80,6 +80,7 @@ pub struct Workspace {
     /// The editor/assistant split.
     split: Entity<ResizableState>,
     pub(crate) continuous: crate::continuous::Continuous,
+    pub(crate) review: crate::review::Review,
     /// The TypeSafe key panel, while it's open.
     pub(crate) key_input: Option<Entity<gpui_kit::component::input::InputState>>,
     /// The appearance panel's font choices, while it's open.
@@ -162,6 +163,7 @@ impl Workspace {
             cursor_claims: Vec::new(),
             split,
             continuous: Default::default(),
+            review: Default::default(),
             key_input: None,
             font_choices: None,
             grader: services.grader,
@@ -227,6 +229,7 @@ impl Workspace {
             }
             self.reconcile_findings(cx);
             self.continuous_edited(cx);
+            self.review_edited(cx);
             cx.notify();
         }
     }
@@ -265,6 +268,7 @@ impl Workspace {
                 window.set_window_title(&self.title());
                 self.load_claims(cx);
                 self.continuous_baseline(cx);
+                self.reset_review(cx);
                 cx.notify();
             }
             Err(e) => self.set_notice(format!("Couldn't open {}: {e}", path.display()), cx),
@@ -331,6 +335,7 @@ impl Workspace {
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.load_claims(cx);
         self.continuous_baseline(cx);
+        self.reset_review(cx);
         self.set_dirty(false);
         self.revision += 1;
         window.set_window_title(&self.title());
@@ -685,6 +690,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_copy_edit))
             .on_action(cx.listener(Self::on_fact_check))
             .on_action(cx.listener(Self::on_find_references))
+            .on_action(cx.listener(Self::on_review_document))
             .on_action(cx.listener(Self::on_toggle_continuous))
             .on_action(cx.listener(Self::on_toggle_jev))
             .on_action(cx.listener(Self::on_set_jev_key))
