@@ -14,6 +14,7 @@ use gpui_kit::*;
 use wingman_client::{Event, TaskKind};
 
 use crate::assistant::{task_title, ServiceStatus};
+use crate::continuous::{verdicts, Verdict};
 use crate::findings::{relation_color, verdict_color, Finding, FindingKind, FindingState};
 use crate::suggestions::{
     locate_all, passage_range, CopyEditReply, FactCheckReply, ReferencesReply,
@@ -421,7 +422,7 @@ impl Workspace {
                     .text_color(theme.muted_foreground)
                     .child(div().flex_1().child(if jev {
                         format!(
-                            "Jev grades each paragraph first; acting above {:.0}%.",
+                            "When you pause after a sentence, Jev grades the paragraph; checks run above {:.0}%.",
                             self.settings.jev_threshold * 100.
                         )
                     } else {
@@ -442,6 +443,11 @@ impl Workspace {
                             })),
                     ),
             );
+        }
+        if self.settings.continuous && self.settings.jev_prefilter {
+            if let Some(panel) = self.render_jev_report(&theme) {
+                list = list.child(panel);
+            }
         }
         let cards = self.runs.iter().filter(|r| !r.background).count();
         if cards == 0 && !self.findings.iter().any(Finding::visible) {
@@ -967,6 +973,77 @@ impl Workspace {
                 )
             })
             .into_any_element()
+    }
+}
+
+impl Workspace {
+    /// Jev's latest grades: each score, and whether it earned a check.
+    fn render_jev_report(&self, theme: &Theme) -> Option<AnyElement> {
+        let grading = self.continuous.is_grading();
+        let report = self.continuous.last_grade();
+        if !grading && report.is_none() {
+            return None;
+        }
+        let threshold = self.settings.jev_threshold;
+        let mut panel = v_flex()
+            .gap_1()
+            .p_2()
+            .border_1()
+            .border_color(theme.border)
+            .rounded_md()
+            .text_xs()
+            .child(section_heading("Jev", theme));
+        if grading {
+            panel = panel.child(
+                div()
+                    .text_color(theme.muted_foreground)
+                    .child("Grading the paragraph you just wrote…"),
+            );
+        }
+        if let Some(report) = report {
+            panel = panel.child(
+                div()
+                    .italic()
+                    .text_color(theme.muted_foreground)
+                    .child(format!("“{}”", report.excerpt)),
+            );
+            let rows = verdicts(&report.grades, &self.continuous_kinds(), threshold);
+            for (kind, score, verdict) in &rows {
+                let (note, color) = match verdict {
+                    Verdict::Check => ("checking", theme.foreground),
+                    Verdict::Skip => ("not needed", theme.muted_foreground),
+                    Verdict::Off => ("off as you write", theme.muted_foreground),
+                };
+                panel = panel.child(
+                    h_flex()
+                        .gap_2()
+                        .text_color(color)
+                        .when(*verdict == Verdict::Check, |d| {
+                            d.font_weight(FontWeight::SEMIBOLD)
+                        })
+                        .child(div().w(px(80.)).child(task_label(*kind)))
+                        .child(div().w(px(40.)).child(format!("{:.0}%", score * 100.)))
+                        .child(div().child(note)),
+                );
+            }
+            if !rows.iter().any(|(_, _, v)| *v == Verdict::Check) {
+                panel = panel.child(div().pt_1().text_color(theme.muted_foreground).child(
+                    format!(
+                        "Nothing scored above {:.0}%, so no checks are needed.",
+                        threshold * 100.
+                    ),
+                ));
+            }
+        }
+        Some(panel.into_any_element())
+    }
+}
+
+fn task_label(kind: TaskKind) -> &'static str {
+    match kind {
+        TaskKind::CopyEdit => "Copy-edit",
+        TaskKind::FactCheck => "Fact-check",
+        TaskKind::FindReferences => "References",
     }
 }
 

@@ -22,17 +22,6 @@ pub struct Grades {
     pub references: f32,
 }
 
-impl Grades {
-    pub fn summary(&self) -> String {
-        format!(
-            "copy-edit {:.0}% · fact-check {:.0}% · references {:.0}%",
-            self.copy_edit * 100.,
-            self.fact_check * 100.,
-            self.references * 100.
-        )
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum JevError {
     /// The key was rejected.

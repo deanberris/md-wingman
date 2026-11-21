@@ -43,6 +43,62 @@ pub struct Continuous {
     /// After Jev says it's busy: wait until then, backing off each time.
     retry_at: Option<Instant>,
     backoff: Duration,
+    /// The latest grades, to show in the sidebar.
+    last_grade: Option<GradeReport>,
+}
+
+/// Jev's grades for the paragraph it graded last.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GradeReport {
+    /// The paragraph's first few words.
+    pub excerpt: String,
+    pub grades: Grades,
+}
+
+/// What continuous mode does with one kind of help after Jev's grade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    /// Above the threshold: Claude checks it.
+    Check,
+    /// At or below the threshold: no request.
+    Skip,
+    /// Turned off for checking as you write.
+    Off,
+}
+
+/// Each kind of help with its score and what happens to it.
+pub fn verdicts(
+    grades: &Grades,
+    kinds: &[TaskKind],
+    threshold: f32,
+) -> Vec<(TaskKind, f32, Verdict)> {
+    [
+        TaskKind::CopyEdit,
+        TaskKind::FactCheck,
+        TaskKind::FindReferences,
+    ]
+    .into_iter()
+    .map(|k| {
+        let score = grade_for(grades, k);
+        let verdict = if !kinds.contains(&k) {
+            Verdict::Off
+        } else if score > threshold {
+            Verdict::Check
+        } else {
+            Verdict::Skip
+        };
+        (k, score, verdict)
+    })
+    .collect()
+}
+
+fn excerpt(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut out = words.iter().take(8).copied().collect::<Vec<_>>().join(" ");
+    if words.len() > 8 {
+        out.push('…');
+    }
+    out
 }
 
 impl Continuous {
@@ -56,6 +112,10 @@ impl Continuous {
 
     pub fn is_grading(&self) -> bool {
         self.grading.is_some()
+    }
+
+    pub fn last_grade(&self) -> Option<&GradeReport> {
+        self.last_grade.as_ref()
     }
 
     /// The TypeSafe key changed: use it from now on.
@@ -87,6 +147,7 @@ impl Continuous {
 
     /// Counts every paragraph in `text` as checked.
     fn baseline(&mut self, text: &str, kinds: &[TaskKind]) {
+        self.last_grade = None;
         for range in paragraphs(text) {
             for &kind in kinds {
                 self.mark(kind, &text[range.clone()]);
@@ -470,18 +531,25 @@ impl Workspace {
             }
         };
         let model = self.settings.jev_model.clone();
+        let words = excerpt(&paragraph);
         self.continuous.grading = Some(fp);
         let grading = cx
             .background_executor()
             .spawn(async move { jev::grade(&key, &model, &paragraph) });
         self.continuous._grading_task = Some(cx.spawn(async move |this, cx| {
             let result = grading.await;
-            let _ = this.update(cx, |this, cx| this.grading_done(fp, result, cx));
+            let _ = this.update(cx, |this, cx| this.grading_done(fp, words, result, cx));
         }));
         cx.notify();
     }
 
-    fn grading_done(&mut self, fp: u64, result: Result<Grades, JevError>, cx: &mut Context<Self>) {
+    fn grading_done(
+        &mut self,
+        fp: u64,
+        excerpt: String,
+        result: Result<Grades, JevError>,
+        cx: &mut Context<Self>,
+    ) {
         self.continuous.grading = None;
         self.continuous._grading_task = None;
         match result {
@@ -489,7 +557,7 @@ impl Workspace {
                 self.continuous.grades.insert(fp, grades);
                 self.continuous.backoff = Duration::ZERO;
                 self.continuous.retry_at = None;
-                self.set_notice(format!("Jev: {}", grades.summary()), cx);
+                self.continuous.last_grade = Some(GradeReport { excerpt, grades });
                 self.continuous_tick(cx);
             }
             Err(JevError::BadKey) => {
@@ -520,7 +588,9 @@ impl Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{fingerprint, finished, paragraphs};
+    use super::{fingerprint, finished, paragraphs, verdicts, Verdict};
+    use crate::jev::Grades;
+    use wingman_client::TaskKind;
 
     fn texts(doc: &str) -> Vec<&str> {
         paragraphs(doc).into_iter().map(|r| &doc[r]).collect()
@@ -559,5 +629,20 @@ mod tests {
         assert!(finished("Was it “tall?”"));
         assert!(finished("It was *tall*.\n"));
         assert!(!finished("It was tall and"));
+    }
+
+    #[test]
+    fn verdicts_follow_the_threshold() {
+        let grades = Grades {
+            copy_edit: 0.8,
+            fact_check: 0.66,
+            references: 0.9,
+        };
+        let kinds = [TaskKind::CopyEdit, TaskKind::FactCheck];
+        let got: Vec<Verdict> = verdicts(&grades, &kinds, 0.66)
+            .into_iter()
+            .map(|(_, _, v)| v)
+            .collect();
+        assert_eq!(got, vec![Verdict::Check, Verdict::Skip, Verdict::Off]);
     }
 }
