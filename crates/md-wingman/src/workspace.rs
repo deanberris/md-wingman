@@ -43,6 +43,8 @@ pub struct Services {
     /// the settings file. `None` reads the file.
     pub settings: Option<Settings>,
     pub persist_settings: bool,
+    /// Looks at Claude Code for the setup wizard.
+    pub probe: Arc<dyn crate::setup::SetupProbe>,
 }
 
 impl Services {
@@ -53,6 +55,7 @@ impl Services {
             grader: Arc::new(Jev),
             settings: None,
             persist_settings: true,
+            probe: Arc::new(crate::setup::SystemProbe),
         }
     }
 }
@@ -86,6 +89,9 @@ pub struct Workspace {
     /// The appearance panel's font choices, while it's open.
     pub(crate) font_choices: Option<crate::appearance::FontChoices>,
     pub(crate) grader: Arc<dyn Grader>,
+    /// The setup wizard, while it's open.
+    pub(crate) setup: Option<crate::setup::SetupWizard>,
+    pub(crate) probe: Arc<dyn crate::setup::SetupProbe>,
     persist_settings: bool,
     /// A save prompt is up, before quitting or closing the window.
     asking_to_save: bool,
@@ -167,6 +173,8 @@ impl Workspace {
             key_input: None,
             font_choices: None,
             grader: services.grader,
+            setup: None,
+            probe: services.probe,
             persist_settings: services.persist_settings,
             asking_to_save: false,
             close_confirmed: false,
@@ -187,6 +195,11 @@ impl Workspace {
         }
         this.prepare_jev(cx);
         this.start_assistant(services.start_assistant, cx);
+        // First launch, or Claude Code wasn't signed in last time: show what
+        // to set up, in the Assistant pane, with the editor still focused.
+        if !this.settings.setup_done {
+            this.open_setup(cx);
+        }
         this.editor.update(cx, |state, cx| state.focus(window, cx));
         this
     }
@@ -695,6 +708,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_continuous))
             .on_action(cx.listener(Self::on_toggle_jev))
             .on_action(cx.listener(Self::on_set_jev_key))
+            .on_action(cx.listener(Self::on_show_setup))
             .on_action(cx.listener(Self::on_toggle_dark_mode))
             .on_action(cx.listener(Self::on_appearance_and_fonts))
             .on_action(cx.listener(Self::on_increase_font_size))

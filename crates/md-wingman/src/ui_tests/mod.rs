@@ -13,6 +13,7 @@ mod contract;
 mod findings;
 mod quit;
 mod review;
+mod setup;
 mod view;
 
 use std::collections::VecDeque;
@@ -31,6 +32,7 @@ use wingman_client::{AuthMode, Event, ServiceInfo, TaskKind};
 use crate::assistant::{Assistant, Backend, RunningTask};
 use crate::jev::{Grader, Grades, JevError};
 use crate::settings::Settings;
+use crate::setup::{ClaudeStatus, SetupProbe};
 use crate::workspace::{Services, Workspace};
 
 /// Undo and redo, as the editor binds them on this platform.
@@ -263,12 +265,65 @@ pub fn grades(copy_edit: f32, fact_check: f32, references: f32) -> Grades {
     }
 }
 
+/// A stand-in for Claude Code and Terminal, for the setup wizard.
+pub struct FakeProbe {
+    status: Mutex<ClaudeStatus>,
+    pub checks: AtomicUsize,
+    /// Commands "run in Terminal", in order.
+    pub ran: Mutex<Vec<String>>,
+}
+
+impl FakeProbe {
+    pub fn new(status: ClaudeStatus) -> Arc<Self> {
+        Arc::new(FakeProbe {
+            status: Mutex::new(status),
+            checks: AtomicUsize::new(0),
+            ran: Mutex::default(),
+        })
+    }
+
+    pub fn set(&self, status: ClaudeStatus) {
+        *self.status.lock().unwrap() = status;
+    }
+
+    pub fn checks(&self) -> usize {
+        self.checks.load(Ordering::SeqCst)
+    }
+
+    pub fn ran(&self) -> Vec<String> {
+        self.ran.lock().unwrap().clone()
+    }
+}
+
+impl SetupProbe for FakeProbe {
+    fn check_claude(&self) -> ClaudeStatus {
+        self.checks.fetch_add(1, Ordering::SeqCst);
+        self.status.lock().unwrap().clone()
+    }
+    fn can_run_in_terminal(&self) -> bool {
+        true
+    }
+    fn run_in_terminal(&self, command: &str) -> Result<(), String> {
+        self.ran.lock().unwrap().push(command.to_string());
+        Ok(())
+    }
+}
+
+/// Signed in, as most tests want.
+pub fn signed_in() -> ClaudeStatus {
+    ClaudeStatus::SignedIn {
+        path: "/usr/local/bin/claude".into(),
+        method: Some("claude.ai".into()),
+    }
+}
+
 /// The workspace under test, in its window, with its fakes.
 pub struct Harness {
     pub window: AnyWindowHandle,
     pub workspace: Entity<Workspace>,
     pub assistant: FakeAssistant,
     pub jev: Arc<FakeJev>,
+    pub probe: Arc<FakeProbe>,
 }
 
 pub struct Setup {
@@ -280,6 +335,11 @@ pub struct Setup {
     /// Reading the Keychain fails with this, as when access is denied.
     pub keychain_error: Option<&'static str>,
     pub width: f32,
+    /// Open as on first launch, with the setup wizard. Otherwise setup is
+    /// treated as done.
+    pub first_run: bool,
+    /// What the setup wizard finds.
+    pub claude: ClaudeStatus,
 }
 
 impl Default for Setup {
@@ -291,6 +351,8 @@ impl Default for Setup {
             jev_key: Some("test-key"),
             keychain_error: None,
             width: 1600.,
+            first_run: false,
+            claude: signed_in(),
         }
     }
 }
@@ -301,6 +363,9 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
     if let Some(e) = setup.keychain_error {
         jev.deny_keychain(e);
     }
+    let probe = FakeProbe::new(setup.claude.clone());
+    let mut settings = setup.settings;
+    settings.setup_done = !setup.first_run;
     let backend = assistant.backend();
     let failure = setup.assistant_fails;
     let services = Services {
@@ -315,8 +380,9 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
             )),
         }),
         grader: jev.clone(),
-        settings: Some(setup.settings),
+        settings: Some(settings),
         persist_settings: false,
+        probe: probe.clone(),
     };
     let text = setup.text;
     let width = setup.width;
@@ -352,6 +418,7 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
         workspace,
         assistant,
         jev,
+        probe,
     };
     // Let the assistant "start".
     cx.run_until_parked();
