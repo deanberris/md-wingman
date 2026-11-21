@@ -22,6 +22,31 @@ use crate::ToggleContinuous;
 /// Paragraphs with fewer words than this aren't worth a request.
 const MIN_WORDS: usize = 6;
 
+/// After a failed check, wait this long before trying again, doubling up to
+/// `RETRY_MAX`.
+const RETRY_FIRST: Duration = Duration::from_secs(30);
+const RETRY_MAX: Duration = Duration::from_secs(300);
+
+/// Ends a message with a full stop, if it doesn't end a sentence already.
+fn sentence(message: &str) -> String {
+    let message = message.trim_end();
+    if message.ends_with(['.', '!', '?']) {
+        message.to_string()
+    } else {
+        format!("{message}.")
+    }
+}
+
+/// "30s", or "2m" for whole minutes.
+fn seconds(d: Duration) -> String {
+    let s = d.as_secs();
+    if s >= 60 && s.is_multiple_of(60) {
+        format!("{}m", s / 60)
+    } else {
+        format!("{s}s")
+    }
+}
+
 #[derive(Default)]
 pub struct Continuous {
     /// (task, fingerprint) pairs already checked.
@@ -43,6 +68,9 @@ pub struct Continuous {
     /// After Jev says it's busy: wait until then, backing off each time.
     retry_at: Option<Instant>,
     backoff: Duration,
+    /// After a check fails: how long to wait before trying again, doubling
+    /// each time. Zero while checks are working.
+    run_backoff: Duration,
 }
 
 impl Continuous {
@@ -400,14 +428,33 @@ impl Workspace {
             return;
         }
         match failure {
-            None => self.continuous_tick(cx),
+            None => {
+                if self.continuous.run_backoff != Duration::ZERO {
+                    // A check works again, for instance after signing in.
+                    self.continuous.run_backoff = Duration::ZERO;
+                    self.set_notice("Checking as you write again", cx);
+                }
+                self.continuous_tick(cx)
+            }
             Some(message) => {
                 // Try it again next time, unless the text moved on anyway.
                 self.continuous
                     .checked
                     .remove(&(kind_key(kind), fingerprint(&sent)));
                 if message != "cancelled" {
-                    self.set_notice(format!("Paused checking as you write: {message}"), cx);
+                    // Keep trying on our own, so fixing the cause (such as
+                    // signing in to Claude) is enough to get going again.
+                    let wait = (self.continuous.run_backoff * 2).clamp(RETRY_FIRST, RETRY_MAX);
+                    self.continuous.run_backoff = wait;
+                    self.set_notice(
+                        format!(
+                            "Paused checking as you write: {} Trying again in {}.",
+                            sentence(&message),
+                            seconds(wait)
+                        ),
+                        cx,
+                    );
+                    self.schedule_continuous_at(wait, cx);
                 } else {
                     self.continuous_tick(cx);
                 }

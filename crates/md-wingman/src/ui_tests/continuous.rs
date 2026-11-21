@@ -214,8 +214,53 @@ fn a_failed_check_pauses_with_the_reason(cx: &mut TestAppContext) {
     assert_eq!(h.assistant.request_count(), 1);
     assert_eq!(
         h.notice(cx),
-        "Paused checking as you write: Claude stopped early (error_max_turns)"
+        "Paused checking as you write: Claude stopped early (error_max_turns). Trying again in 30s."
     );
+}
+
+#[gpui_kit::test]
+fn checking_resumes_on_its_own_after_signing_in(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            text: FIRST,
+            settings: settings(false),
+            ..Default::default()
+        },
+    );
+    let not_signed_in =
+        "Claude isn't signed in. Open Terminal, run \"claude auth login\", then try again.";
+    h.assistant.answer_with(move |_, _| {
+        vec![wingman_client::Event::Error {
+            message: not_signed_in.into(),
+        }]
+    });
+    write_second(&h, cx, "Then I wrote teh second one, and it ends here.");
+    h.wait(cx, PAUSE + 10);
+    assert_eq!(h.assistant.request_count(), 1);
+    assert_eq!(
+        h.notice(cx),
+        format!("Paused checking as you write: {not_signed_in} Trying again in 30s.")
+    );
+
+    // Still signed out: it waits twice as long next time.
+    h.wait(cx, 30_000);
+    assert_eq!(h.assistant.request_count(), 2);
+    assert_eq!(
+        h.notice(cx),
+        format!("Paused checking as you write: {not_signed_in} Trying again in 1m.")
+    );
+
+    // The writer signs in. The next try works without touching the document.
+    answer_copy_edits(&h);
+    h.wait(cx, 60_000);
+    assert_eq!(h.assistant.request_count(), 3);
+    assert_eq!(h.notice(cx), "Checking as you write again");
+    assert_eq!(h.open_findings(cx), vec!["teh"]);
+
+    // And it doesn't keep retrying once it has worked.
+    h.wait(cx, 600_000);
+    assert_eq!(h.assistant.request_count(), 3);
 }
 
 // The Jev pre-filter.
