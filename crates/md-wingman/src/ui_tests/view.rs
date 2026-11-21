@@ -214,10 +214,12 @@ fn font_size_changes_by_shortcut_and_panel(cx: &mut TestAppContext) {
     assert_eq!(mono(cx), 32.);
 }
 
+/// Not Menlo: that is macOS's default, which gpui-component swaps for an
+/// installed font, and the test platform has none.
 #[gpui_kit::test]
 fn a_saved_editor_font_applies_to_the_theme(cx: &mut TestAppContext) {
     let settings = Settings {
-        editor_font: Some("Menlo".into()),
+        editor_font: Some("JetBrains Mono".into()),
         editor_font_size: 18.,
         ..Settings::default()
     };
@@ -235,6 +237,6 @@ fn a_saved_editor_font_applies_to_the_theme(cx: &mut TestAppContext) {
             f32::from(theme.mono_font_size),
         )
     });
-    assert_eq!(family, "Menlo");
+    assert_eq!(family, "JetBrains Mono");
     assert_eq!(size, 18.);
 }
