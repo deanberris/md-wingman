@@ -56,15 +56,13 @@ const QUESTIONS: [(&str, &str, &[&str]); 3] = [
          missing word, grammar mistake or punctuation error is an error, however small: \
          even a single one means the paragraph needs an edit. Check the spelling of every word \
          before you judge the style. Ignore Markdown syntax.",
-        // Six levels: 0, 20, 40, 60, 80 and 100%. Any real error is 80% or
-        // more; style alone stays at 60% or less.
+        // Three levels: 0, 50 and 100%. Any error at all is the top level,
+        // so Jev's uncertainty between one slip and style alone still lands
+        // well above the threshold; style alone is 50%.
         &[
             "No errors at all, and it reads cleanly",
-            "No errors at all; a word choice could be polished",
-            "No errors at all; some phrasing is awkward or wordy",
-            "No errors at all, but a sentence is hard to follow",
-            "One error: a single misspelled word, typo, wrong or missing word, or grammar or punctuation slip",
-            "Two or more errors, or hard to read",
+            "No errors at all, but some phrasing is awkward, wordy or hard to follow",
+            "At least one error: a misspelled word, typo, wrong or missing word, or grammar or punctuation slip",
         ],
     ),
     (
@@ -240,14 +238,14 @@ mod tests {
         let body = request_body("jev-1.14.0", "Some text.");
         assert_eq!(body["model"], "jev-1.14.0");
         assert_eq!(body["state"], "Some text.");
-        for name in ["copy_edit", "fact_check", "references"] {
+        for (name, levels) in [("copy_edit", 3), ("fact_check", 6), ("references", 6)] {
             assert_eq!(body["questions"][name]["type"], "score");
             assert_eq!(
                 body["questions"][name]["criteria"]
                     .as_array()
                     .unwrap()
                     .len(),
-                6
+                levels
             );
         }
     }
@@ -278,8 +276,8 @@ mod tests {
             }});
             parse_grades(&reply).unwrap().copy_edit
         };
-        assert!(at(3.0) < 0.66, "style alone stays below");
-        assert!(at(4.0) > 0.66, "a single error clears it");
+        assert!(at(1.0) < 0.66, "style alone stays below");
+        assert!(at(2.0) > 0.66, "a single error clears it");
     }
 
     /// Calibration against real Jev, with the key from the Keychain or
