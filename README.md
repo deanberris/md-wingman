@@ -74,6 +74,30 @@ scripts/dev.sh notes/draft.md   # or open a file
 
 The first build takes a few minutes. md-wingman uses your Claude subscription by default and ignores any `ANTHROPIC_API_KEY` in your environment. To use an API key instead, run `WINGMAN_AUTH=api_key scripts/dev.sh`. The status bar shows which one is in use.
 
+### Install it as an app
+
+`scripts/dev.sh` runs the app from the terminal. To get md-wingman.app in your Applications folder, which you can open from Finder, Spotlight or the Dock, run:
+
+```sh
+scripts/install.sh
+```
+
+It builds the app and the assistant service, packages them as `md-wingman.app`, signs it and copies it to `/Applications` (or `~/Applications` if `/Applications` isn't writable; set `WINGMAN_INSTALL_DIR` to choose). Run it again after `git pull` to update.
+
+It signs with your Apple Development certificate when you have one (see [Jev pre-filter](#jev-pre-filter) for how to get one for free), and ad-hoc otherwise. Either way, macOS opens it without complaint: an app you build yourself isn't quarantined, so Gatekeeper doesn't ask for a Developer ID signature. The only difference is that with an ad-hoc signature, macOS asks again for Keychain access to your TypeSafe key after each rebuild.
+
+### Have a coding agent build and install it
+
+You don't need to download a build that someone else signed. A coding agent such as [Claude Code](https://claude.com/claude-code) can build md-wingman from source on your own Mac. Clone the repository, start the agent in it, and ask:
+
+> Build and install md-wingman on this Mac by following AGENTS.md.
+
+[AGENTS.md](AGENTS.md) tells the agent what to check, what to install (asking you first), how to build, sign and install the app, and which steps it must leave to you, such as signing in to Claude. Claude Code reads it through [CLAUDE.md](CLAUDE.md). A first-run setup assistant inside the app, to walk you through signing in and the optional TypeSafe key, is in the works.
+
+### Why there are no downloadable builds yet
+
+macOS only opens a downloaded app without warnings if it is signed with a Developer ID certificate and notarized by Apple. Apple has no free signing program for open-source projects: Developer ID needs the paid Apple Developer Program. Signed and notarized release builds, made in GitHub Actions, may come once the app is ready to package. Until then, building from source is the way to install it.
+
 ### Using the assistant
 
 Select a passage, or just put the cursor in a paragraph, then press ⌘E to copy-edit, ⇧⌘C to fact-check or ⇧⌘R to find references (the buttons at the top of the sidebar do the same). Suggested edits are underlined in the text and listed in the sidebar, where you can accept or dismiss each one, or accept them all. Fact-checked claims are shaded by verdict and come with sources. Each reference can be cited right after the claim it backs, as a footnote (with the full citation added at the end of the document) or as an inline link. Click a card to jump to its text. Set `WINGMAN_FAKE=1` to try the flow with canned replies, without calling Claude.

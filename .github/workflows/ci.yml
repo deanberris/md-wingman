@@ -43,6 +43,20 @@ jobs:
       - name: Build release app
         run: cargo build --release -p md-wingman --locked
 
+      # The same packaging users get from scripts/install.sh, signed ad-hoc
+      # and installed to a scratch folder, so the install guide keeps working.
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Package and install md-wingman.app
+        env:
+          WINGMAN_CODESIGN_IDENTITY: "-"
+          WINGMAN_INSTALL_DIR: ${{ runner.temp }}/Applications
+        run: |
+          scripts/install.sh
+          codesign --verify --strict --deep "$WINGMAN_INSTALL_DIR/md-wingman.app"
+          plutil -lint "$WINGMAN_INSTALL_DIR/md-wingman.app/Contents/Info.plist"
+          test -x "$WINGMAN_INSTALL_DIR/md-wingman.app/Contents/Resources/wingman-service"
+
   service:
     name: Assistant service (macOS, Bun)
     runs-on: macos-latest
