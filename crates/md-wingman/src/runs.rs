@@ -494,6 +494,9 @@ impl Workspace {
         let ready = matches!(self.service_status, ServiceStatus::Ready(_));
 
         let mut list = v_flex().gap_3().p_3();
+        if let Some(panel) = self.render_setup(&theme, cx) {
+            list = list.child(panel);
+        }
         if let Some(panel) = self.render_appearance_panel(&theme, cx) {
             list = list.child(panel);
         }

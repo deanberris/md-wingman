@@ -72,6 +72,8 @@ scripts/dev.sh                  # an empty document
 scripts/dev.sh notes/draft.md   # or open a file
 ```
 
+The first time it opens, md-wingman shows a short setup in the Assistant pane. It checks that Claude Code is installed and signed in (`claude auth status`), and if not, gives you the command to install it or to sign in (`claude auth login`). Copy a command into Terminal yourself, or press **Run in Terminal** and md-wingman opens a Terminal window running it. It checks again every few seconds, so it notices once you've signed in. The second step, setting up the Jev pre-filter, is optional and can be skipped. Setup never takes the focus from the editor, so you can start writing straight away. It comes back at the next launch until Claude Code is signed in, and you can reopen it any time from Assistant ▸ Setup….
+
 The first build takes a few minutes. md-wingman uses your Claude subscription by default and ignores any `ANTHROPIC_API_KEY` in your environment. To use an API key instead, run `WINGMAN_AUTH=api_key scripts/dev.sh`. The status bar shows which one is in use.
 
 ### Install it as an app
@@ -122,7 +124,7 @@ To keep requests down:
 
 With [Jev](https://docs.typesafe.ai), TypeSafe's scoring model, checking as you write spends Claude requests only where they are needed. Before checking a paragraph, md-wingman asks Jev to grade how much it needs a copy-edit, a fact-check and references. It acts only on grades above 66%, and that includes finding references, which it doesn't do without Jev. Grading a paragraph costs a fraction of a cent. The status bar shows the latest grades.
 
-Turn it on with the **Jev pre-filter** button in the sidebar, or from Assistant ▸ Jev Pre-filter. The first time, it asks for your TypeSafe API key ([console.typesafe.ai/keys](https://console.typesafe.ai/keys)). The key is stored in your macOS Keychain under "md-wingman", never in the settings file. To change or remove it, use Assistant ▸ Set TypeSafe API Key…. If TypeSafe rejects the key, checking pauses until you set a new one. If Jev is busy, it waits and tries again.
+Turn it on with the **Jev pre-filter** button in the sidebar, or from Assistant ▸ Jev Pre-filter. The first time, it asks for your TypeSafe API key ([console.typesafe.ai/keys](https://console.typesafe.ai/keys)). The key is stored in your macOS Keychain under "md-wingman", never in the settings file. You can also save it from Terminal with `security add-generic-password -U -s md-wingman -a typesafe-api-key -w`, which asks for the key so it stays out of your shell history; the first time md-wingman reads it, macOS asks whether to allow that. To change or remove it, use Assistant ▸ Set TypeSafe API Key…. If TypeSafe rejects the key, checking pauses until you set a new one. If Jev is busy, it waits and tries again.
 
 md-wingman reads the key from the Keychain once per launch and keeps it in memory. When you build from source, macOS may still ask on every launch, because each rebuild gives the app a new code signature and macOS ties "Always Allow" to the signature. To make it stick, sign your builds with an Apple Development certificate:
 
@@ -180,7 +182,8 @@ divider, and you can edit it by hand. Missing fields take their defaults.
   "appearance": "system",
   "editor_font": null,
   "editor_font_size": 14,
-  "preview_font": null
+  "preview_font": null,
+  "setup_done": false
 }
 ```
 
@@ -192,7 +195,7 @@ changes it. `continuous` turns on checking as you write.
 `continuous_fact_check` to `false` to copy-edit only, since fact-checks search
 the web and take longer. `jev_threshold` is the grade, from 0 to 1, that a
 paragraph must score above for the pre-filter to act on it. `appearance` is
-`"system"`, `"light"` or `"dark"`. A `null` font means the default: Menlo for
+`"system"`, `"light"` or `"dark"`. `setup_done` is set once you finish setup with Claude Code signed in, so setup stops opening at launch. A `null` font means the default: Menlo for
 the editor and the system font for the preview.
 
 ### Logs

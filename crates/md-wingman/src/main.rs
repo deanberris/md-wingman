@@ -18,6 +18,7 @@ mod review;
 mod ruler;
 mod runs;
 mod settings;
+mod setup;
 mod store;
 mod suggestions;
 #[cfg(test)]
@@ -48,6 +49,7 @@ actions!(
         ToggleContinuous,
         ToggleJevPrefilter,
         SetJevKey,
+        ShowSetup,
         ToggleDarkMode,
         AppearanceAndFonts,
         IncreaseFontSize,
@@ -111,6 +113,7 @@ fn main() {
             cx.set_menus([
                 Menu::new("md-wingman").items([
                     MenuItem::action("About md-wingman", About),
+                    MenuItem::action("Set Up md-wingman…", ShowSetup),
                     MenuItem::separator(),
                     MenuItem::action("Quit md-wingman", Quit),
                 ]),
@@ -151,6 +154,8 @@ fn main() {
                     MenuItem::action("Check As You Write", ToggleContinuous),
                     MenuItem::action("Jev Pre-filter", ToggleJevPrefilter),
                     MenuItem::action("Set TypeSafe API Key…", SetJevKey),
+                    MenuItem::separator(),
+                    MenuItem::action("Setup…", ShowSetup),
                 ]),
                 Menu::new("Help").items([
                     MenuItem::action("Show Log File", ShowLogFile),
