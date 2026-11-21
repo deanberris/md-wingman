@@ -71,6 +71,88 @@ pub struct Continuous {
     /// After a check fails: how long to wait before trying again, doubling
     /// each time. Zero while checks are working.
     run_backoff: Duration,
+    /// The latest grades, to show in the sidebar.
+    last_grade: Option<GradeReport>,
+}
+
+/// Jev's grades for the paragraph it graded last.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GradeReport {
+    /// The paragraph's first few words.
+    pub excerpt: String,
+    /// Its fingerprint, to match the checks that follow.
+    pub fingerprint: u64,
+    pub grades: Grades,
+    /// The checks the grades started, and how each one went.
+    pub checks: Vec<(TaskKind, CheckStatus)>,
+}
+
+/// How a check started by a grade is going.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CheckStatus {
+    Running,
+    /// Finished, with this many suggestions or claims.
+    Done(usize),
+    Failed(String),
+}
+
+impl GradeReport {
+    pub fn status(&self, kind: TaskKind) -> Option<&CheckStatus> {
+        self.checks.iter().find(|(k, _)| *k == kind).map(|(_, s)| s)
+    }
+
+    fn set(&mut self, kind: TaskKind, status: CheckStatus) {
+        match self.checks.iter_mut().find(|(k, _)| *k == kind) {
+            Some((_, s)) => *s = status,
+            None => self.checks.push((kind, status)),
+        }
+    }
+}
+
+/// What continuous mode does with one kind of help after Jev's grade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    /// Above the threshold: Claude checks it.
+    Check,
+    /// At or below the threshold: no request.
+    Skip,
+    /// Turned off for checking as you write.
+    Off,
+}
+
+/// Each kind of help with its score and what happens to it.
+pub fn verdicts(
+    grades: &Grades,
+    kinds: &[TaskKind],
+    threshold: f32,
+) -> Vec<(TaskKind, f32, Verdict)> {
+    [
+        TaskKind::CopyEdit,
+        TaskKind::FactCheck,
+        TaskKind::FindReferences,
+    ]
+    .into_iter()
+    .map(|k| {
+        let score = grade_for(grades, k);
+        let verdict = if !kinds.contains(&k) {
+            Verdict::Off
+        } else if score > threshold {
+            Verdict::Check
+        } else {
+            Verdict::Skip
+        };
+        (k, score, verdict)
+    })
+    .collect()
+}
+
+fn excerpt(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut out = words.iter().take(8).copied().collect::<Vec<_>>().join(" ");
+    if words.len() > 8 {
+        out.push('…');
+    }
+    out
 }
 
 impl Continuous {
@@ -86,6 +168,10 @@ impl Continuous {
         self.grading.is_some()
     }
 
+    pub fn last_grade(&self) -> Option<&GradeReport> {
+        self.last_grade.as_ref()
+    }
+
     /// The TypeSafe key changed: use it from now on.
     pub fn key_changed(&mut self, key: Option<String>) {
         self.jev_key = Some(key);
@@ -94,15 +180,24 @@ impl Continuous {
         self.backoff = Duration::ZERO;
     }
 
-    pub fn has_key(&mut self, grader: &dyn Grader) -> bool {
-        self.key(grader).is_ok_and(|k| k.is_some())
-    }
-
-    fn key(&mut self, grader: &dyn Grader) -> Result<Option<String>, String> {
+    /// The key, reading the Keychain only if it hasn't been read yet.
+    pub(crate) fn key(&mut self, grader: &dyn Grader) -> Result<Option<String>, String> {
         if self.jev_key.is_none() {
             self.jev_key = Some(grader.load_key()?);
         }
         Ok(self.jev_key.clone().flatten())
+    }
+
+    /// The key as read so far: `None` until the Keychain has been read.
+    /// Grading never reads the Keychain itself, so a prompt can't appear
+    /// while you write.
+    pub(crate) fn cached_key(&self) -> Option<Option<String>> {
+        self.jev_key.clone()
+    }
+
+    /// Grading waits until a key is set.
+    pub fn block_until_key(&mut self) {
+        self.jev_blocked = true;
     }
 
     fn mark(&mut self, kind: TaskKind, text: &str) {
@@ -115,6 +210,7 @@ impl Continuous {
 
     /// Counts every paragraph in `text` as checked.
     fn baseline(&mut self, text: &str, kinds: &[TaskKind]) {
+        self.last_grade = None;
         for range in paragraphs(text) {
             for &kind in kinds {
                 self.mark(kind, &text[range.clone()]);
@@ -406,18 +502,51 @@ impl Workspace {
         };
         let sent = text[passage.clone()].to_string();
         self.continuous.mark(kind, &sent);
-        if let Some(id) = self.start_run_on(kind, passage, true, cx) {
-            self.continuous.running = Some((id, sent));
-        }
+        let status = match self.start_run_on(kind, passage, true, cx) {
+            Some(id) => {
+                self.continuous.running = Some((id, sent.clone()));
+                CheckStatus::Running
+            }
+            None => {
+                // It didn't start (the assistant said why): try again after
+                // the next edit rather than count it as checked.
+                self.continuous
+                    .checked
+                    .remove(&(kind_key(kind), fingerprint(&sent)));
+                CheckStatus::Failed(
+                    self.notice
+                        .as_ref()
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| "it couldn't start".into()),
+                )
+            }
+        };
+        self.continuous_report(&sent, kind, status);
         cx.notify();
     }
 
-    /// Called when a background run ends, however it ended.
+    /// Notes how a check of `paragraph` is going, if it's the one Jev
+    /// graded last.
+    fn continuous_report(&mut self, paragraph: &str, kind: TaskKind, status: CheckStatus) {
+        let fp = fingerprint(paragraph);
+        if let Some(report) = self
+            .continuous
+            .last_grade
+            .as_mut()
+            .filter(|r| r.fingerprint == fp)
+        {
+            report.set(kind, status);
+        }
+    }
+
+    /// Called when a background run ends, however it ended, with how many
+    /// findings it made.
     pub(crate) fn continuous_run_ended(
         &mut self,
         id: usize,
         kind: TaskKind,
         failure: Option<String>,
+        found: usize,
         cx: &mut Context<Self>,
     ) {
         let Some((running, sent)) = self.continuous.running.take() else {
@@ -427,6 +556,14 @@ impl Workspace {
             self.continuous.running = Some((running, sent));
             return;
         }
+        let status = match &failure {
+            None => CheckStatus::Done(found),
+            Some(m) if m == "cancelled" => {
+                CheckStatus::Failed("stopped: the paragraph changed".into())
+            }
+            Some(m) => CheckStatus::Failed(m.clone()),
+        };
+        self.continuous_report(&sent, kind, status);
         match failure {
             None => {
                 if self.continuous.run_backoff != Duration::ZERO {
@@ -499,9 +636,11 @@ impl Workspace {
 
 impl Workspace {
     fn start_grading(&mut self, fp: u64, paragraph: String, cx: &mut Context<Self>) {
-        let key = match self.continuous.key(&*self.grader) {
-            Ok(Some(key)) => key,
-            Ok(None) => {
+        let key = match self.continuous.cached_key() {
+            Some(Some(key)) => key,
+            // Still reading the Keychain: grade once it's done.
+            None => return,
+            Some(None) => {
                 self.continuous.jev_blocked = true;
                 self.set_notice(
                     "The Jev pre-filter needs a TypeSafe API key: Assistant ▸ Set TypeSafe API Key…",
@@ -509,16 +648,9 @@ impl Workspace {
                 );
                 return;
             }
-            Err(e) => {
-                self.continuous.jev_blocked = true;
-                self.set_notice(
-                    format!("Couldn't read the TypeSafe key from the Keychain: {e}"),
-                    cx,
-                );
-                return;
-            }
         };
         let model = self.settings.jev_model.clone();
+        let words = excerpt(&paragraph);
         let grader = self.grader.clone();
         self.continuous.grading = Some(fp);
         let grading = cx
@@ -526,12 +658,18 @@ impl Workspace {
             .spawn(async move { grader.grade(&key, &model, &paragraph) });
         self.continuous._grading_task = Some(cx.spawn(async move |this, cx| {
             let result = grading.await;
-            let _ = this.update(cx, |this, cx| this.grading_done(fp, result, cx));
+            let _ = this.update(cx, |this, cx| this.grading_done(fp, words, result, cx));
         }));
         cx.notify();
     }
 
-    fn grading_done(&mut self, fp: u64, result: Result<Grades, JevError>, cx: &mut Context<Self>) {
+    fn grading_done(
+        &mut self,
+        fp: u64,
+        excerpt: String,
+        result: Result<Grades, JevError>,
+        cx: &mut Context<Self>,
+    ) {
         self.continuous.grading = None;
         self.continuous._grading_task = None;
         match result {
@@ -539,7 +677,12 @@ impl Workspace {
                 self.continuous.grades.insert(fp, grades);
                 self.continuous.backoff = Duration::ZERO;
                 self.continuous.retry_at = None;
-                self.set_notice(format!("Jev: {}", grades.summary()), cx);
+                self.continuous.last_grade = Some(GradeReport {
+                    excerpt,
+                    fingerprint: fp,
+                    grades,
+                    checks: Vec::new(),
+                });
                 self.continuous_tick(cx);
             }
             Err(JevError::BadKey) => {
@@ -570,7 +713,9 @@ impl Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{fingerprint, finished, paragraphs};
+    use super::{fingerprint, finished, paragraphs, verdicts, Verdict};
+    use crate::jev::Grades;
+    use wingman_client::TaskKind;
 
     fn texts(doc: &str) -> Vec<&str> {
         paragraphs(doc).into_iter().map(|r| &doc[r]).collect()
@@ -609,5 +754,20 @@ mod tests {
         assert!(finished("Was it “tall?”"));
         assert!(finished("It was *tall*.\n"));
         assert!(!finished("It was tall and"));
+    }
+
+    #[test]
+    fn verdicts_follow_the_threshold() {
+        let grades = Grades {
+            copy_edit: 0.8,
+            fact_check: 0.66,
+            references: 0.9,
+        };
+        let kinds = [TaskKind::CopyEdit, TaskKind::FactCheck];
+        let got: Vec<Verdict> = verdicts(&grades, &kinds, 0.66)
+            .into_iter()
+            .map(|(_, _, v)| v)
+            .collect();
+        assert_eq!(got, vec![Verdict::Check, Verdict::Skip, Verdict::Off]);
     }
 }

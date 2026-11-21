@@ -163,6 +163,10 @@ pub struct FakeJev {
     /// Grades to hand out before falling back to `grade`, such as a busy reply.
     queued: Mutex<VecDeque<Result<Grades, JevError>>>,
     pub calls: AtomicUsize,
+    /// How often the Keychain was read.
+    pub key_reads: AtomicUsize,
+    /// Set to make reading the Keychain fail, as when access is denied.
+    keychain_error: Mutex<Option<String>>,
 }
 
 impl FakeJev {
@@ -172,7 +176,17 @@ impl FakeJev {
             grade: Mutex::new(Box::new(|_| Ok(grades(0., 0., 0.)))),
             queued: Mutex::default(),
             calls: AtomicUsize::new(0),
+            key_reads: AtomicUsize::new(0),
+            keychain_error: Mutex::default(),
         })
+    }
+
+    pub fn key_reads(&self) -> usize {
+        self.key_reads.load(Ordering::SeqCst)
+    }
+
+    pub fn deny_keychain(&self, error: &str) {
+        *self.keychain_error.lock().unwrap() = Some(error.to_string());
     }
 
     pub fn grade_with(&self, f: impl Fn(&str) -> Result<Grades, JevError> + Send + Sync + 'static) {
@@ -194,6 +208,10 @@ impl FakeJev {
 
 impl Grader for FakeJev {
     fn load_key(&self) -> Result<Option<String>, String> {
+        self.key_reads.fetch_add(1, Ordering::SeqCst);
+        if let Some(e) = self.keychain_error.lock().unwrap().clone() {
+            return Err(e);
+        }
         Ok(self.key.lock().unwrap().clone())
     }
     fn store_key(&self, key: &str) -> Result<(), String> {
@@ -235,6 +253,8 @@ pub struct Setup {
     /// Whether the assistant starts, or fails to.
     pub assistant_fails: Option<&'static str>,
     pub jev_key: Option<&'static str>,
+    /// Reading the Keychain fails with this, as when access is denied.
+    pub keychain_error: Option<&'static str>,
     pub width: f32,
 }
 
@@ -245,6 +265,7 @@ impl Default for Setup {
             settings: Settings::default(),
             assistant_fails: None,
             jev_key: Some("test-key"),
+            keychain_error: None,
             width: 1600.,
         }
     }
@@ -253,6 +274,9 @@ impl Default for Setup {
 pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
     let assistant = FakeAssistant::default();
     let jev = FakeJev::new(setup.jev_key);
+    if let Some(e) = setup.keychain_error {
+        jev.deny_keychain(e);
+    }
     let backend = assistant.backend();
     let failure = setup.assistant_fails;
     let services = Services {

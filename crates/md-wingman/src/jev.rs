@@ -22,17 +22,6 @@ pub struct Grades {
     pub references: f32,
 }
 
-impl Grades {
-    pub fn summary(&self) -> String {
-        format!(
-            "copy-edit {:.0}% · fact-check {:.0}% · references {:.0}%",
-            self.copy_edit * 100.,
-            self.fact_check * 100.,
-            self.references * 100.
-        )
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum JevError {
     /// The key was rejected.
@@ -82,41 +71,63 @@ impl Grader for Jev {
     }
 }
 
-/// The three questions, each a rubric from "not at all" to "a lot".
-const QUESTIONS: [(&str, &str, [&str; 4]); 3] = [
+/// The three questions, each a rubric from "not at all" to "a lot". Scores
+/// are normalised to 0..1 by level, so a rubric's wording decides which
+/// levels clear the threshold (0.66 by default).
+const QUESTIONS: [(&str, &str, &[&str]); 3] = [
     (
         "copy_edit",
-        "This is a paragraph from a blog post written in Markdown, often dictated, so it can \
-         contain transcription errors. How much copy-editing does it need: spelling, grammar, \
-         punctuation, wrong words and awkward phrasing? Ignore Markdown syntax.",
-        [
-            "None: it reads cleanly",
-            "Minor: a slip or two that few readers would notice",
-            "Some: clear errors or awkward sentences a reader would notice",
-            "A lot: many errors, or hard to read",
+        "You are a professional copy editor at a high-profile publication, judging a \
+         paragraph from a blog post written in Markdown. It is often dictated, so it can \
+         contain transcription errors. Hold it to your publication's standard: how much \
+         copy-editing does it need before it could run? Any misspelling, typo, wrong or \
+         missing word, grammar mistake or punctuation error is an error, however small: \
+         even a single one means the paragraph needs an edit. Check the spelling of every word \
+         before you judge the style. Ignore Markdown syntax.",
+        // Three levels: 0, 50 and 100%. Any error at all is the top level,
+        // so Jev's uncertainty between one slip and style alone still lands
+        // well above the threshold; style alone is 50%.
+        &[
+            "No errors at all, and it reads cleanly",
+            "No errors at all, but some phrasing is awkward, wordy or hard to follow",
+            "At least one error: a misspelled word, typo, wrong or missing word, or grammar or punctuation slip",
         ],
     ),
     (
         "fact_check",
-        "This is a paragraph from a blog post. Does it make factual claims worth checking \
-         against sources: dates, numbers, names, events, quotes or statements about the world \
-         that could be wrong?",
-        [
-            "None: opinion, narrative or instructions only",
-            "Only well-known facts that are very unlikely to be wrong",
-            "Some specific claims a careful reader might question",
-            "Many specific claims, or claims that look wrong",
+        "You are a fact-checker at a high-profile publication, judging a paragraph from a \
+         blog post. Does it make claims worth checking against sources? Anything said about \
+         the world beyond the writer's own experience is a claim: dates, numbers, names, \
+         events and quotes, and also observations, trends, comparisons and assessments of \
+         the kind analysts, researchers or experts make. If an expert has already made the \
+         point, it is worth checking.",
+        // Six levels: 0, 20, 40, 60, 80 and 100%. Specific claims and
+        // expert-style observations are 80% or more.
+        &[
+            "None: only the writer's own experience, opinion or instructions",
+            "Only common knowledge nobody would question",
+            "Vague statements with nothing specific to check",
+            "A loose claim that is very probably right",
+            "Claims worth checking: specific facts, or observations, trends or assessments of the kind analysts or experts make",
+            "Many such claims, or claims that look wrong",
         ],
     ),
     (
         "references",
-        "This is a paragraph from a blog post. Would it be stronger with a citation or a link \
-         to a source, for a statistic, quote, study, news item or specific claim?",
-        [
-            "No: nothing a reader would want a source for",
-            "Unlikely: a source would add little",
-            "Probably: a claim or quote a reader may want a source for",
-            "Yes: statistics, quotes, research or news that should be cited",
+        "You are a research editor at a high-profile publication, judging a paragraph from a \
+         blog post. Would it be stronger with a citation or a link to a source? Statistics, \
+         quotes, studies and news need one, and so do observations, trends and assessments \
+         that analysts, researchers or experts have already made: credit them and link to \
+         their work.",
+        // Six levels: 0, 20, 40, 60, 80 and 100%. Anything an expert has
+        // already said is 80% or more.
+        &[
+            "No: only the writer's own experience or opinion",
+            "Unlikely: common knowledge",
+            "Possibly: a general point a link could support but doesn't need",
+            "A point a link would help with, though readers wouldn't expect one",
+            "Yes: observations, trends or assessments analysts or experts have made, or a claim readers would want a source for",
+            "Definitely: statistics, quotes, research or news that must be cited",
         ],
     ),
 ];
@@ -137,6 +148,10 @@ pub fn request_body(model: &str, paragraph: &str) -> Value {
 /// Reads the three scores, each normalised from its rubric's levels to 0..1.
 pub fn parse_grades(reply: &Value) -> Result<Grades, String> {
     let score = |name: &str| -> Result<f32, String> {
+        let asked = QUESTIONS
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map_or(4, |(_, _, c)| c.len());
         let answer = &reply["answers"][name];
         let score = answer["score"]
             .as_f64()
@@ -146,7 +161,7 @@ pub fn parse_grades(reply: &Value) -> Result<Grades, String> {
             .as_object()
             .map(|l| l.len())
             .filter(|&n| n >= 2)
-            .unwrap_or(QUESTIONS[0].2.len());
+            .unwrap_or(asked);
         Ok((score / (levels - 1) as f64).clamp(0., 1.) as f32)
     };
     Ok(Grades {
@@ -243,7 +258,7 @@ pub fn clear_key() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_grades, request_body};
+    use super::{grade, load_key, parse_grades, request_body};
     use serde_json::json;
 
     #[test]
@@ -251,14 +266,14 @@ mod tests {
         let body = request_body("jev-1.14.0", "Some text.");
         assert_eq!(body["model"], "jev-1.14.0");
         assert_eq!(body["state"], "Some text.");
-        for name in ["copy_edit", "fact_check", "references"] {
+        for (name, levels) in [("copy_edit", 3), ("fact_check", 6), ("references", 6)] {
             assert_eq!(body["questions"][name]["type"], "score");
             assert_eq!(
                 body["questions"][name]["criteria"]
                     .as_array()
                     .unwrap()
                     .len(),
-                4
+                levels
             );
         }
     }
@@ -276,5 +291,55 @@ mod tests {
         assert_eq!(g.fact_check, 0.5);
         assert_eq!(g.references, 0.0);
         assert!(parse_grades(&json!({"answers": {}})).is_err());
+    }
+
+    #[test]
+    fn any_copy_edit_error_clears_the_threshold() {
+        // Without a legend, the levels come from the rubric we sent.
+        let at = |level: f64| {
+            let reply = json!({"answers": {
+                "copy_edit": {"score": level},
+                "fact_check": {"score": 0.0},
+                "references": {"score": 0.0},
+            }});
+            parse_grades(&reply).unwrap().copy_edit
+        };
+        assert!(at(1.0) < 0.66, "style alone stays below");
+        assert!(at(2.0) > 0.66, "a single error clears it");
+    }
+
+    /// Calibration against real Jev, with the key from the Keychain or
+    /// `WINGMAN_JEV_KEY`: `cargo test -p md-wingman jev_live -- --ignored --nocapture`
+    #[test]
+    #[ignore = "calls the TypeSafe API"]
+    fn jev_live_calibration() {
+        let key = load_key().unwrap().expect("no TypeSafe key");
+        // Each sample with whether it should clear 0.66 for copy-edit,
+        // fact-check and references.
+        let samples = [
+            ("typos", [true, false, false], "I went to the confrence last weak and it was realy usefull. I enjoyed the talks alot and met some grate people."),
+            ("one typo", [true, false, false], "I spent Saturday morning rewriting the parser, and by lunch it handled every file I recieved from the team."),
+            ("one slip", [true, false, false], "We moved the build to the new machine last month, and its been noticeably faster ever since."),
+            ("clean", [false, false, false], "I spent Saturday morning rewriting the parser, and by lunch it handled every file I received from the team."),
+            ("expert view", [false, true, true], "Most of the growth in cloud spending now comes from AI workloads, and the big providers are building data centres faster than the power grid can keep up."),
+            ("statistic", [false, true, true], "Rust has topped Stack Overflow's survey as the most admired language for nine years running."),
+        ];
+        let mut wrong = Vec::new();
+        for (name, expect, text) in samples {
+            let g = grade(&key, "jev-1.14.0", text).unwrap();
+            println!(
+                "{name:>12}: copy-edit {:.0}%  fact-check {:.0}%  references {:.0}%",
+                g.copy_edit * 100.,
+                g.fact_check * 100.,
+                g.references * 100.
+            );
+            let got = [g.copy_edit, g.fact_check, g.references].map(|v| v > 0.66);
+            for (i, kind) in ["copy-edit", "fact-check", "references"].iter().enumerate() {
+                if got[i] != expect[i] {
+                    wrong.push(format!("{name}: {kind}"));
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "misgraded: {wrong:?}");
     }
 }
