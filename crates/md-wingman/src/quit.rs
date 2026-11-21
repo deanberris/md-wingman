@@ -109,7 +109,7 @@ pub fn quit_requested(cx: &App) -> bool {
 }
 
 /// Whether the platform may terminate the app without asking.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(not(all(target_os = "macos", not(test))), allow(dead_code))]
 fn may_terminate() -> bool {
     CONFIRMED.load(Ordering::SeqCst) || !UNSAVED.load(Ordering::SeqCst)
 }
