@@ -43,18 +43,27 @@ impl std::fmt::Display for JevError {
     }
 }
 
-/// The three questions, each a rubric from "not at all" to "a lot".
-const QUESTIONS: [(&str, &str, [&str; 4]); 3] = [
+/// The three questions, each a rubric from "not at all" to "a lot". Scores
+/// are normalised to 0..1 by level, so a rubric's wording decides which
+/// levels clear the threshold (0.66 by default).
+const QUESTIONS: [(&str, &str, &[&str]); 3] = [
     (
         "copy_edit",
-        "This is a paragraph from a blog post written in Markdown, often dictated, so it can \
-         contain transcription errors. How much copy-editing does it need: spelling, grammar, \
-         punctuation, wrong words and awkward phrasing? Ignore Markdown syntax.",
-        [
-            "None: it reads cleanly",
-            "Minor: a slip or two that few readers would notice",
-            "Some: clear errors or awkward sentences a reader would notice",
-            "A lot: many errors, or hard to read",
+        "You are a professional copy editor at a high-profile publication, judging a \
+         paragraph from a blog post written in Markdown. It is often dictated, so it can \
+         contain transcription errors. Hold it to your publication's standard: how much \
+         copy-editing does it need before it could run? Any misspelling, typo, wrong or \
+         missing word, grammar mistake or punctuation error is an error, however small: \
+         even a single one means the paragraph needs an edit. Ignore Markdown syntax.",
+        // Six levels: 0, 20, 40, 60, 80 and 100%. Any real error is 80% or
+        // more; style alone stays at 60% or less.
+        &[
+            "None: no errors, and it reads cleanly",
+            "No errors; a word choice could be polished",
+            "No errors; a sentence is awkward and worth rephrasing",
+            "No errors, but wordy or hard to follow in places",
+            "Errors: at least one typo, misspelling, wrong or missing word, grammar or punctuation error",
+            "Many errors, or hard to read",
         ],
     ),
     (
@@ -62,7 +71,7 @@ const QUESTIONS: [(&str, &str, [&str; 4]); 3] = [
         "This is a paragraph from a blog post. Does it make factual claims worth checking \
          against sources: dates, numbers, names, events, quotes or statements about the world \
          that could be wrong?",
-        [
+        &[
             "None: opinion, narrative or instructions only",
             "Only well-known facts that are very unlikely to be wrong",
             "Some specific claims a careful reader might question",
@@ -73,7 +82,7 @@ const QUESTIONS: [(&str, &str, [&str; 4]); 3] = [
         "references",
         "This is a paragraph from a blog post. Would it be stronger with a citation or a link \
          to a source, for a statistic, quote, study, news item or specific claim?",
-        [
+        &[
             "No: nothing a reader would want a source for",
             "Unlikely: a source would add little",
             "Probably: a claim or quote a reader may want a source for",
@@ -98,6 +107,10 @@ pub fn request_body(model: &str, paragraph: &str) -> Value {
 /// Reads the three scores, each normalised from its rubric's levels to 0..1.
 pub fn parse_grades(reply: &Value) -> Result<Grades, String> {
     let score = |name: &str| -> Result<f32, String> {
+        let asked = QUESTIONS
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map_or(4, |(_, _, c)| c.len());
         let answer = &reply["answers"][name];
         let score = answer["score"]
             .as_f64()
@@ -107,7 +120,7 @@ pub fn parse_grades(reply: &Value) -> Result<Grades, String> {
             .as_object()
             .map(|l| l.len())
             .filter(|&n| n >= 2)
-            .unwrap_or(QUESTIONS[0].2.len());
+            .unwrap_or(asked);
         Ok((score / (levels - 1) as f64).clamp(0., 1.) as f32)
     };
     Ok(Grades {
@@ -212,14 +225,14 @@ mod tests {
         let body = request_body("jev-1.14.0", "Some text.");
         assert_eq!(body["model"], "jev-1.14.0");
         assert_eq!(body["state"], "Some text.");
-        for name in ["copy_edit", "fact_check", "references"] {
+        for (name, levels) in [("copy_edit", 6), ("fact_check", 4), ("references", 4)] {
             assert_eq!(body["questions"][name]["type"], "score");
             assert_eq!(
                 body["questions"][name]["criteria"]
                     .as_array()
                     .unwrap()
                     .len(),
-                4
+                levels
             );
         }
     }
@@ -237,5 +250,20 @@ mod tests {
         assert_eq!(g.fact_check, 0.5);
         assert_eq!(g.references, 0.0);
         assert!(parse_grades(&json!({"answers": {}})).is_err());
+    }
+
+    #[test]
+    fn any_copy_edit_error_clears_the_threshold() {
+        // Without a legend, the levels come from the rubric we sent.
+        let at = |level: f64| {
+            let reply = json!({"answers": {
+                "copy_edit": {"score": level},
+                "fact_check": {"score": 0.0},
+                "references": {"score": 0.0},
+            }});
+            parse_grades(&reply).unwrap().copy_edit
+        };
+        assert!(at(3.0) < 0.66, "style alone stays below");
+        assert!(at(4.0) > 0.66, "a single error clears it");
     }
 }
