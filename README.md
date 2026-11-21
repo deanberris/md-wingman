@@ -160,6 +160,20 @@ cd service && bun install && bun run build && cd ..
 cargo run -p wingman-client --example wingman -- fact-check "The Eiffel Tower opened in 1899."
 ```
 
+## Tests
+
+```sh
+cargo test --workspace          # unit tests and the headless UI tests
+cd service && bun test          # the assistant service
+```
+
+The UI tests (`crates/md-wingman/src/ui_tests/`) open the real window
+headlessly with gpui's test harness and drive it with clicks, typing and
+shortcuts. A scripted assistant stands in for the service and a fake Jev for
+TypeSafe, so they need no Claude login, TypeSafe key or Keychain, and the
+pause before checking as you write runs on the test clock. CI runs all of it
+on macOS for every pull request.
+
 ## Layout
 
 - `crates/md-wingman`: the app, built with [gpui](https://gpui.rs) and [gpui-component](https://github.com/longbridge/gpui-component)
