@@ -90,15 +90,33 @@ It signs with your Apple Development certificate when you have one (see [Jev pre
 
 ### Have a coding agent build and install it
 
-You don't need to download a build that someone else signed. A coding agent such as [Claude Code](https://claude.com/claude-code) can build md-wingman from source on your own Mac. Clone the repository, start the agent in it, and ask:
+You don't need to download a build that someone else made. A coding agent such as [Claude Code](https://claude.com/claude-code) can build md-wingman from source on your own Mac. Clone the repository, start the agent in it, and ask:
 
 > Build and install md-wingman on this Mac by following AGENTS.md.
 
 [AGENTS.md](AGENTS.md) tells the agent what to check, what to install (asking you first), how to build, sign and install the app, and which steps it must leave to you, such as signing in to Claude. Claude Code reads it through [CLAUDE.md](CLAUDE.md). A first-run setup assistant inside the app, to walk you through signing in and the optional TypeSafe key, is in the works.
 
-### Why there are no downloadable builds yet
+### Download a build (unsigned, for early adopters)
 
-macOS only opens a downloaded app without warnings if it is signed with a Developer ID certificate and notarized by Apple. Apple has no free signing program for open-source projects: Developer ID needs the paid Apple Developer Program. Signed and notarized release builds, made in GitHub Actions, may come once the app is ready to package. Until then, building from source is the way to install it.
+Releases on the [Releases page](../../releases) come with a ready-made `md-wingman.app` for Apple Silicon Macs, built by GitHub Actions from a version tag. You still need [Claude Code](https://claude.com/claude-code) installed and signed in.
+
+These builds are **unsigned**: signed ad-hoc rather than with an Apple Developer ID, and not notarized, because Developer ID needs the paid Apple Developer Program. They are for early adopters who are happy to approve the app by hand. In practice:
+
+- **macOS stops it the first time you open it.** Choose Done, then open System Settings ▸ Privacy & Security, find the message about md-wingman and choose **Open Anyway**. Or, for a download you have verified, run `xattr -d com.apple.quarantine /Applications/md-wingman.app`. You do this again after each update.
+- **There is no publisher identity**, so verify what you downloaded instead. Every release file has a GitHub artifact attestation, which proves it was built by this repository's release workflow from the tagged source, and `SHA256SUMS.txt` lists their checksums:
+
+  ```sh
+  gh attestation verify md-wingman-0.1.0-macos-arm64.dmg --repo deanberris/md-wingman
+  shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+  ```
+
+- **Keychain "Always Allow" may not stick across updates.** An ad-hoc signature changes with every build, so after an update macOS may ask again for access to your TypeSafe key.
+
+If you'd rather not approve an unsigned app, build it from source as above: an app you build yourself isn't quarantined, so none of this applies. Signed and notarized builds will come once the app is ready to package.
+
+#### Making a release
+
+Push a tag that matches the version in `Cargo.toml`, such as `v0.1.0`. `.github/workflows/release.yml` builds the app with `scripts/package.sh`, makes a zip and a disk image, attests them, and publishes a pre-release with checksums and install notes from `.github/release-notes/`. Pull requests that change the release path run the same build without publishing. Once the repository has the Developer ID and notary secrets listed at the top of the workflow, releases are signed with Developer ID, notarized and stapled instead, with no other change.
 
 ### Using the assistant
 
