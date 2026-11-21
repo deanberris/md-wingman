@@ -1,0 +1,20 @@
+{
+  "passage": "The Eiffel Tower opened in 1899. It is about 330 metres tall.",
+  "data": {
+    "summary": "One claim is wrong.",
+    "claims": [
+      {
+        "quote": "The Eiffel Tower opened in 1899.",
+        "verdict": "false",
+        "explanation": "It opened in 1889, for the World's Fair.",
+        "sources": [{ "title": "Eiffel Tower history", "url": "https://www.toureiffel.paris/en/the-monument/history" }]
+      },
+      {
+        "quote": "It is about 330 metres tall.",
+        "verdict": "supported",
+        "explanation": "It is 330 m tall including antennas.",
+        "sources": []
+      }
+    ]
+  }
+}

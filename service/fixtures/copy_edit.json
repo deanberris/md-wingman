@@ -1,0 +1,11 @@
+{
+  "passage": "Their are three towers in teh city, and it were built in 1889.",
+  "data": {
+    "summary": "Three small fixes.",
+    "edits": [
+      { "original": "Their are", "replacement": "There are", "reason": "Wrong word." },
+      { "original": "teh", "replacement": "the", "reason": "Typo." },
+      { "original": "it were", "replacement": "they were", "reason": "Agreement." }
+    ]
+  }
+}

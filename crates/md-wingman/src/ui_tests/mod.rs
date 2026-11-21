@@ -8,6 +8,7 @@
 
 mod assistant;
 mod continuous;
+mod contract;
 mod findings;
 mod quit;
 mod view;
