@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKMessage, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import { claudeEnv, type AuthMode } from "./auth";
 import { resolveClaudePath } from "./claudePath";
 import type { TaskKind } from "./protocol";
@@ -36,15 +36,19 @@ function workDir(): string {
  * The real runner: drives Claude through the Agent SDK, which runs the user's
  * Claude Code. `auth` decides which credential Claude Code may see (see auth.ts).
  */
-export const makeAgentRunner = (auth: AuthMode): Runner => {
+export const makeAgentRunner = (auth: AuthMode, sdk: { query: QueryFn } = { query }): Runner => {
   // Built once, so a bad configuration fails at startup rather than per task.
   const env = { ...claudeEnv(auth), CLAUDE_AGENT_SDK_CLIENT_APP: "md-wingman/0.1.0" };
-  return (input) => runAgent(input, env);
+  return (input) => runAgent(input, env, sdk.query);
 };
+
+/** The Agent SDK's `query`. Tests pass a scripted one to `makeAgentRunner`. */
+export type QueryFn = (args: Parameters<typeof query>[0]) => AsyncIterable<SDKMessage>;
 
 async function runAgent(
   { task, text, context, signal, onDelta, onStatus }: RunInput,
   env: Record<string, string | undefined>,
+  query: QueryFn,
 ): Promise<RunResult> {
   const spec = TASKS[task];
   const abortController = new AbortController();
