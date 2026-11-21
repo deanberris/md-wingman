@@ -2,6 +2,7 @@
 //! sidebar on the right, and a thin status bar underneath.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{EditorState, InputEvent};
@@ -15,6 +16,7 @@ use gpui_kit::*;
 
 use crate::assistant::{auth_mode_from_env, Assistant, ServiceStatus};
 use crate::document::{word_count, Document};
+use crate::jev::{Grader, Jev};
 use crate::settings::Settings;
 use crate::{NewFile, Open, Save, SaveAs, TogglePreview};
 
@@ -28,6 +30,31 @@ const PREVIEW_MAX_WIDTH: f32 = 720.;
 pub enum ViewMode {
     Raw,
     Preview,
+}
+
+/// What the workspace talks to outside itself. The app uses the real ones;
+/// tests swap in fakes, so they need no Claude login, TypeSafe key, Keychain
+/// or settings file.
+pub struct Services {
+    /// Starts the assistant. Runs off the UI thread, since it can block.
+    pub start_assistant: Box<dyn FnOnce() -> Result<Assistant, String> + Send>,
+    pub grader: Arc<dyn Grader>,
+    /// The settings to start with, and whether changes are written back to
+    /// the settings file. `None` reads the file.
+    pub settings: Option<Settings>,
+    pub persist_settings: bool,
+}
+
+impl Services {
+    pub fn real() -> Self {
+        let auth = auth_mode_from_env();
+        Services {
+            start_assistant: Box::new(move || Assistant::start(auth)),
+            grader: Arc::new(Jev),
+            settings: None,
+            persist_settings: true,
+        }
+    }
 }
 
 pub struct Workspace {
@@ -57,11 +84,22 @@ pub struct Workspace {
     pub(crate) key_input: Option<Entity<gpui_kit::component::input::InputState>>,
     /// The appearance panel's font choices, while it's open.
     pub(crate) font_choices: Option<crate::appearance::FontChoices>,
+    pub(crate) grader: Arc<dyn Grader>,
+    persist_settings: bool,
     _subscriptions: Vec<Subscription>,
 }
 
 impl Workspace {
     pub fn new(path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::with_services(path, Services::real(), window, cx)
+    }
+
+    pub fn with_services(
+        path: Option<PathBuf>,
+        services: Services,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let editor = cx.new(|cx| {
             EditorState::new(window, cx)
                 .language("markdown")
@@ -98,7 +136,10 @@ impl Workspace {
             }),
         ];
 
-        let (settings, settings_error) = Settings::load();
+        let (settings, settings_error) = match services.settings {
+            Some(settings) => (settings, None),
+            None => Settings::load(),
+        };
         let mut this = Self {
             focus_handle: cx.focus_handle(),
             editor,
@@ -119,6 +160,8 @@ impl Workspace {
             continuous: Default::default(),
             key_input: None,
             font_choices: None,
+            grader: services.grader,
+            persist_settings: services.persist_settings,
             _subscriptions: subscriptions,
         };
         this.apply_appearance(window, cx);
@@ -128,16 +171,17 @@ impl Workspace {
         if settings_error.is_some() {
             this.notice = settings_error.map(Into::into);
         }
-        this.start_assistant(cx);
+        this.start_assistant(services.start_assistant, cx);
         this.editor.update(cx, |state, cx| state.focus(window, cx));
         this
     }
 
-    fn start_assistant(&mut self, cx: &mut Context<Self>) {
-        let auth = auth_mode_from_env();
-        let start = cx
-            .background_executor()
-            .spawn(async move { Assistant::start(auth) });
+    fn start_assistant(
+        &mut self,
+        start: Box<dyn FnOnce() -> Result<Assistant, String> + Send>,
+        cx: &mut Context<Self>,
+    ) {
+        let start = cx.background_executor().spawn(async move { start() });
         cx.spawn(async move |this, cx| {
             let result = start.await;
             let _ = this.update(cx, |this, cx| {
@@ -212,6 +256,35 @@ impl Workspace {
             }
             Err(e) => self.set_notice(format!("Couldn't open {}: {e}", path.display()), cx),
         }
+    }
+
+    /// Loads text as if it had been opened from a file, for tests.
+    #[cfg(test)]
+    pub(crate) fn set_text_for_test(
+        &mut self,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.editor.update(cx, |state, cx| {
+            state.set_value(text.to_string(), window, cx)
+        });
+        self.document = Document::untitled();
+        self.dirty = false;
+        self.revision += 1;
+        self.continuous_baseline(cx);
+        cx.notify();
+    }
+
+    /// The editor and assistant panes' widths, for tests.
+    #[cfg(test)]
+    pub(crate) fn split_sizes(&self, cx: &App) -> Vec<f32> {
+        self.split
+            .read(cx)
+            .sizes()
+            .iter()
+            .map(|s| f32::from(*s))
+            .collect()
     }
 
     fn save_to(&mut self, path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
@@ -376,6 +449,9 @@ impl Workspace {
     }
 
     pub(crate) fn save_settings(&mut self, cx: &mut Context<Self>) {
+        if !self.persist_settings {
+            return;
+        }
         if let Err(e) = self.settings.save() {
             self.set_notice(format!("Couldn't save settings: {e}"), cx);
         }

@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use gpui_kit::*;
 use wingman_client::TaskKind;
 
-use crate::jev::{self, Grades, JevError};
+use crate::jev::{Grader, Grades, JevError};
 use crate::suggestions::relocate;
 use crate::workspace::Workspace;
 use crate::ToggleContinuous;
@@ -66,13 +66,13 @@ impl Continuous {
         self.backoff = Duration::ZERO;
     }
 
-    pub fn has_key(&mut self) -> bool {
-        self.key().is_ok_and(|k| k.is_some())
+    pub fn has_key(&mut self, grader: &dyn Grader) -> bool {
+        self.key(grader).is_ok_and(|k| k.is_some())
     }
 
-    fn key(&mut self) -> Result<Option<String>, String> {
+    fn key(&mut self, grader: &dyn Grader) -> Result<Option<String>, String> {
         if self.jev_key.is_none() {
-            self.jev_key = Some(jev::load_key()?);
+            self.jev_key = Some(grader.load_key()?);
         }
         Ok(self.jev_key.clone().flatten())
     }
@@ -271,7 +271,7 @@ impl Workspace {
         if !self.settings.continuous {
             return;
         }
-        self.continuous.last_edit = Some(Instant::now());
+        self.continuous.last_edit = Some(cx.background_executor().now());
         if let Some((id, sent)) = self.continuous.running.clone() {
             let text = self.text(cx);
             let start = self.run_passage(id).map(|p| p.start).unwrap_or(0);
@@ -300,13 +300,15 @@ impl Workspace {
 
     /// Starts the next check, if typing has paused and nothing is running.
     pub(crate) fn continuous_tick(&mut self, cx: &mut Context<Self>) {
+        // The executor's clock, which tests can move forward.
+        let now = cx.background_executor().now();
         if !self.settings.continuous
             || self.assistant.is_none()
             || self.continuous.is_checking()
             || self
                 .continuous
                 .last_edit
-                .is_some_and(|t| t.elapsed() < self.delay())
+                .is_some_and(|t| now.saturating_duration_since(t) < self.delay())
         {
             return;
         }
@@ -332,8 +334,8 @@ impl Workspace {
                 return;
             }
             if let Some(at) = self.continuous.retry_at {
-                if at > Instant::now() {
-                    self.schedule_continuous_at(at - Instant::now(), cx);
+                if at > now {
+                    self.schedule_continuous_at(at - now, cx);
                     return;
                 }
             }
@@ -450,7 +452,7 @@ impl Workspace {
 
 impl Workspace {
     fn start_grading(&mut self, fp: u64, paragraph: String, cx: &mut Context<Self>) {
-        let key = match self.continuous.key() {
+        let key = match self.continuous.key(&*self.grader) {
             Ok(Some(key)) => key,
             Ok(None) => {
                 self.continuous.jev_blocked = true;
@@ -470,10 +472,11 @@ impl Workspace {
             }
         };
         let model = self.settings.jev_model.clone();
+        let grader = self.grader.clone();
         self.continuous.grading = Some(fp);
         let grading = cx
             .background_executor()
-            .spawn(async move { jev::grade(&key, &model, &paragraph) });
+            .spawn(async move { grader.grade(&key, &model, &paragraph) });
         self.continuous._grading_task = Some(cx.spawn(async move |this, cx| {
             let result = grading.await;
             let _ = this.update(cx, |this, cx| this.grading_done(fp, result, cx));
@@ -509,7 +512,7 @@ impl Workspace {
                     _ => backoff,
                 };
                 self.continuous.backoff = backoff;
-                self.continuous.retry_at = Some(Instant::now() + wait);
+                self.continuous.retry_at = Some(cx.background_executor().now() + wait);
                 self.set_notice(format!("{e}; trying again in {}s", wait.as_secs()), cx);
                 self.schedule_continuous_at(wait, cx);
             }

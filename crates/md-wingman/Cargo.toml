@@ -26,3 +26,5 @@ keyring = { version = "3", features = ["apple-native"] }
 
 [dev-dependencies]
 tempfile = "3"
+# The headless UI test harness (`#[gpui_kit::test]`, `gpui_kit::test`).
+gpui-kit = { version = "=0.10.0", features = ["tree-sitter-markdown", "test-support"] }

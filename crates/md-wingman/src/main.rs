@@ -15,6 +15,8 @@ mod runs;
 mod settings;
 mod store;
 mod suggestions;
+#[cfg(test)]
+mod ui_tests;
 mod workspace;
 
 use std::path::PathBuf;
@@ -60,6 +62,26 @@ macro_rules! key {
     };
 }
 
+/// The app's keyboard shortcuts.
+pub(crate) fn bind_keys(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new(key!("n"), NewFile, None),
+        KeyBinding::new(key!("o"), Open, None),
+        KeyBinding::new(key!("s"), Save, None),
+        KeyBinding::new(key!("shift-s"), SaveAs, None),
+        KeyBinding::new(key!("p"), TogglePreview, None),
+        KeyBinding::new(key!("e"), CopyEdit, None),
+        KeyBinding::new(key!("shift-c"), FactCheck, None),
+        KeyBinding::new(key!("shift-r"), FindReferences, None),
+        KeyBinding::new(key!("alt-q"), Reflow, None),
+        KeyBinding::new(key!("shift-k"), ToggleContinuous, None),
+        KeyBinding::new(key!("="), IncreaseFontSize, None),
+        KeyBinding::new(key!("-"), DecreaseFontSize, None),
+        KeyBinding::new(key!("0"), ResetFontSize, None),
+        KeyBinding::new(key!("q"), Quit, None),
+    ]);
+}
+
 fn main() {
     let path = std::env::args_os().nth(1).map(PathBuf::from);
 
@@ -68,22 +90,7 @@ fn main() {
         .run(move |cx| {
             gpui_kit::init(cx);
 
-            cx.bind_keys([
-                KeyBinding::new(key!("n"), NewFile, None),
-                KeyBinding::new(key!("o"), Open, None),
-                KeyBinding::new(key!("s"), Save, None),
-                KeyBinding::new(key!("shift-s"), SaveAs, None),
-                KeyBinding::new(key!("p"), TogglePreview, None),
-                KeyBinding::new(key!("e"), CopyEdit, None),
-                KeyBinding::new(key!("shift-c"), FactCheck, None),
-                KeyBinding::new(key!("shift-r"), FindReferences, None),
-                KeyBinding::new(key!("alt-q"), Reflow, None),
-                KeyBinding::new(key!("shift-k"), ToggleContinuous, None),
-                KeyBinding::new(key!("="), IncreaseFontSize, None),
-                KeyBinding::new(key!("-"), DecreaseFontSize, None),
-                KeyBinding::new(key!("0"), ResetFontSize, None),
-                KeyBinding::new(key!("q"), Quit, None),
-            ]);
+            bind_keys(cx);
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.set_menus([
                 Menu::new("md-wingman").items([MenuItem::action("Quit md-wingman", Quit)]),
