@@ -41,6 +41,9 @@ pub struct Settings {
     pub editor_font_size: f32,
     /// The preview's font; the system font when unset.
     pub preview_font: Option<String>,
+    /// The setup wizard was finished with Claude Code signed in, so it
+    /// doesn't open at launch any more. Assistant ▸ Setup… reopens it.
+    pub setup_done: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,6 +72,7 @@ impl Default for Settings {
             editor_font: None,
             editor_font_size: 14.,
             preview_font: None,
+            setup_done: false,
         }
     }
 }
