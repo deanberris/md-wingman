@@ -65,7 +65,8 @@ scripts/install.sh
 ```
 
 This builds the assistant service (Bun) and the app (cargo, release), puts
-both in `md-wingman.app`, signs it and copies it to `/Applications`, or
+both in `md-wingman.app` (that part is `scripts/package.sh`), signs it and
+copies it to `/Applications`, or
 `~/Applications` if `/Applications` isn't writable. The first build takes
 several minutes; let it finish.
 
@@ -119,6 +120,10 @@ stores it in their Keychain. Don't handle the key yourself.
 - The UI must never interrupt the person while they type: no modal dialogs or
   Keychain prompts mid-typing. Assistant work happens in the background and
   shows up as marks by the text and in the sidebar.
+- Packaging lives in `scripts/package.sh`, shared by `scripts/install.sh`
+  and the release workflow (`.github/workflows/release.yml`). Pull requests
+  that change either run the release build without publishing. Don't push
+  version tags: releases are cut by the maintainer.
 - Work is tracked in GitHub Issues.
 - Log through the `log` macros. Never log keys or tokens, and never log
   document text directly: pass it through `wingman_log::text` (or `log.text`

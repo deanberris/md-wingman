@@ -1,0 +1,194 @@
+# Build md-wingman.app and publish it as a GitHub Release when a version tag
+# (v0.1.0, v0.2.0-beta.1, ...) is pushed. The tag must match the version in
+# Cargo.toml.
+#
+# Signing:
+#   - By default the app is signed ad-hoc and the release is marked as an
+#     unsigned pre-release for early adopters. macOS asks users to approve it
+#     in System Settings ▸ Privacy & Security on first open.
+#   - When the repository has the Developer ID secrets below, the app is
+#     signed with Developer ID and the hardened runtime, notarized and stapled
+#     instead, and the release is a normal one:
+#       MACOS_DEVELOPER_ID_P12           base64 of the exported .p12
+#                                        (certificate and private key)
+#       MACOS_DEVELOPER_ID_P12_PASSWORD  its password
+#       MACOS_NOTARY_APPLE_ID            the Apple ID used for notarization
+#       MACOS_NOTARY_PASSWORD            an app-specific password for it
+#       MACOS_NOTARY_TEAM_ID             the Developer Program team ID
+#
+# Every release has SHA-256 checksums and a GitHub artifact attestation, so
+# anyone can check with `gh attestation verify` that a download was built by
+# this workflow from this repository.
+#
+# Pull requests that touch the release path build and package the app the
+# same way, without publishing anything.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "scripts/package.sh"
+      - "scripts/install.sh"
+      - "scripts/service.entitlements"
+      - ".github/release-notes/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  release:
+    name: Build and publish md-wingman.app
+    runs-on: macos-latest
+    permissions:
+      contents: write      # create the release
+      id-token: write      # sign the attestation
+      attestations: write  # store the attestation
+    env:
+      PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      HAS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches Cargo.toml
+        id: version
+        run: |
+          version="$(awk -F'"' '/^version *=/{print $2; exit}' Cargo.toml)"
+          if [[ "$PUBLISH" == true && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in Cargo.toml"
+            exit 1
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Import the Developer ID certificate
+        if: env.HAS_DEVELOPER_ID == 'true'
+        env:
+          P12: ${{ secrets.MACOS_DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          echo "$P12" | base64 --decode >"$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          identity="$(security find-identity -v -p codesigning "$keychain" |
+            awk '/"Developer ID Application: /{print $2; exit}')"
+          if [[ -z "$identity" ]]; then
+            echo "::error::No Developer ID Application identity in MACOS_DEVELOPER_ID_P12"
+            exit 1
+          fi
+          echo "WINGMAN_CODESIGN_IDENTITY=$identity" >>"$GITHUB_ENV"
+          echo "WINGMAN_HARDENED_RUNTIME=1" >>"$GITHUB_ENV"
+
+      - name: Use an ad-hoc signature
+        if: env.HAS_DEVELOPER_ID != 'true'
+        run: echo "WINGMAN_CODESIGN_IDENTITY=-" >>"$GITHUB_ENV"
+
+      - name: Build, package and sign md-wingman.app
+        id: package
+        run: |
+          app="$(scripts/package.sh | tail -n 1)"
+          plutil -lint "$app/Contents/Info.plist"
+          test -x "$app/Contents/Resources/wingman-service"
+          codesign --display --verbose=2 "$app" 2>&1 | grep -E '^(Identifier|Authority|Signature|Runtime)' || true
+          echo "app=$app" >>"$GITHUB_OUTPUT"
+
+      - name: Notarize and staple
+        if: env.HAS_DEVELOPER_ID == 'true'
+        env:
+          APP: ${{ steps.package.outputs.app }}
+          NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+        run: |
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --wait \
+            --apple-id "$NOTARY_APPLE_ID" --password "$NOTARY_PASSWORD" --team-id "$NOTARY_TEAM_ID"
+          xcrun stapler staple "$APP"
+          spctl --assess --type execute --verbose "$APP"
+
+      - name: Make the zip, disk image and checksums
+        id: dist
+        env:
+          APP: ${{ steps.package.outputs.app }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          name="md-wingman-$VERSION-macos-arm64"
+          mkdir -p dist dmg-root
+          # ditto keeps the code signature intact; plain zip can break it.
+          ditto -c -k --keepParent "$APP" "dist/$name.zip"
+          ditto "$APP" dmg-root/md-wingman.app
+          ln -s /Applications dmg-root/Applications
+          # hdiutil's own size estimate for -srcfolder can come up short
+          # ("No space left on device"), so give it the size with headroom.
+          size_mb=$(( $(du -sm dmg-root | cut -f1) + 64 ))
+          hdiutil create -volname md-wingman -srcfolder dmg-root -fs HFS+ \
+            -size "${size_mb}m" -ov -format UDZO "dist/$name.dmg"
+          if [[ "$HAS_DEVELOPER_ID" == true ]]; then
+            codesign --force --sign "$WINGMAN_CODESIGN_IDENTITY" --timestamp "dist/$name.dmg"
+          fi
+          (cd dist && shasum -a 256 "$name.zip" "$name.dmg" >SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+          # The zip must unpack to an app that still verifies.
+          mkdir -p "$RUNNER_TEMP/unzip"
+          ditto -x -k "dist/$name.zip" "$RUNNER_TEMP/unzip"
+          codesign --verify --strict --deep "$RUNNER_TEMP/unzip/md-wingman.app"
+
+      - name: Attest build provenance
+        if: env.PUBLISH == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/*.dmg
+
+      - name: Upload the build (pull requests)
+        if: env.PUBLISH != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: md-wingman-${{ steps.version.outputs.version }}-macos-arm64
+          path: dist/
+          retention-days: 7
+
+      - name: Publish the release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          if [[ "$HAS_DEVELOPER_ID" == true ]]; then
+            title="md-wingman $VERSION"
+            cp .github/release-notes/signed.md "$notes"
+            prerelease=()
+          else
+            title="md-wingman $VERSION (unsigned, for early adopters)"
+            cp .github/release-notes/unsigned.md "$notes"
+            prerelease=(--prerelease)
+          fi
+          sed -i '' -e "s/{{VERSION}}/$VERSION/g" -e "s/{{TAG}}/$GITHUB_REF_NAME/g" "$notes"
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.dmg dist/SHA256SUMS.txt \
+            --title "$title" --notes-file "$notes" --generate-notes --verify-tag \
+            ${prerelease[@]+"${prerelease[@]}"}
