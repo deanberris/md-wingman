@@ -266,6 +266,12 @@ impl Workspace {
             self.set_notice("There's nothing to review yet", cx);
             return;
         }
+        log::info!(
+            target: "review",
+            "reviewing the whole document: {} paragraphs, {}",
+            paragraphs(&text).len(),
+            wingman_log::text(&text)
+        );
         self.review.suggest = false;
         self.review.last = None;
         self.review.pass = Some(Pass {
@@ -324,6 +330,13 @@ impl Workspace {
             return;
         };
         pass.lanes[lane].parts = pass.lanes[lane].parts_done + left;
+        log::debug!(
+            target: "review",
+            "{kind:?}: part {} of {} ({} paragraphs)",
+            pass.lanes[lane].parts_done + 1,
+            pass.lanes[lane].parts,
+            paras.len()
+        );
         let sent = text[span.clone()].to_string();
         let covered: Vec<String> = paras.iter().map(|p| text[p.clone()].to_string()).collect();
         let context = chunk_context(&text, &span);
@@ -335,6 +348,7 @@ impl Workspace {
                 }
             }
             None => {
+                log::warn!(target: "review", "{kind:?}: couldn't start a part; giving up on it");
                 // Couldn't start (the reason is on the status bar): give up
                 // on this lane rather than loop.
                 if let Some(pass) = self.review.pass.as_mut() {
@@ -405,8 +419,18 @@ impl Workspace {
             .iter()
             .filter(|f| f.id >= pass.started_findings && f.visible())
             .count();
+        let parts: usize = pass.lanes.iter().map(|l| l.parts_done).sum();
+        log::info!(
+            target: "review",
+            "review finished: {parts} parts, {findings} findings, {} failed{}",
+            pass.failed,
+            pass.failure
+                .as_deref()
+                .map(|f| format!(" (last: {f})"))
+                .unwrap_or_default()
+        );
         self.review.last = Some(Outcome {
-            parts: pass.lanes.iter().map(|l| l.parts_done).sum(),
+            parts,
             findings,
             failed: pass.failed,
             failure: pass.failure,
@@ -492,6 +516,11 @@ impl Workspace {
             }
         }
         let model = self.settings.jev_model.clone();
+        log::debug!(
+            target: "jev",
+            "asking about readiness: {} paragraphs, {count} words",
+            paras.len()
+        );
         let grader = self.grader.clone();
         self.review.grading = true;
         let grading = cx
@@ -514,12 +543,20 @@ impl Workspace {
         self.review._grading_task = None;
         match result {
             Ok(score) => {
+                log::info!(
+                    target: "jev",
+                    "readiness for a full review: {:.0}% ({} at {:.0}%)",
+                    score * 100.,
+                    if score > self.settings.jev_threshold { "suggesting a review" } else { "not yet" },
+                    self.settings.jev_threshold * 100.
+                );
                 self.review.readiness = Some(score);
                 self.review.graded = fps;
                 self.review.graded_words = count;
                 self.review.suggest = score > self.settings.jev_threshold;
             }
             Err(JevError::BadKey) => {
+                log::error!(target: "jev", "TypeSafe rejected the key while grading readiness");
                 self.continuous.block_until_key();
                 self.set_notice(
                     "TypeSafe didn't accept the API key. Set it again: Assistant ▸ Set TypeSafe API Key…",
@@ -527,7 +564,9 @@ impl Workspace {
                 );
             }
             // Busy or unreachable: ask again after the next long pause.
-            Err(_) => {}
+            Err(e) => {
+                log::warn!(target: "jev", "readiness grading failed ({e}); asking again later")
+            }
         }
         cx.notify();
     }

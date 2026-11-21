@@ -108,8 +108,8 @@ stores it in their Keychain. Don't handle the key yourself.
 
 ## Changing the code
 
-- Rust workspace: `crates/md-wingman` (the gpui app) and
-  `crates/wingman-client` (client for the service). TypeScript service in
+- Rust workspace: `crates/md-wingman` (the gpui app), `crates/wingman-client`
+  (client for the service) and `crates/wingman-log` (the log file). TypeScript service in
   `service/`, on the Claude Agent SDK, compiled with Bun.
 - Before you push, run what CI runs:
   - `cargo fmt --all -- --check`
@@ -120,3 +120,6 @@ stores it in their Keychain. Don't handle the key yourself.
   Keychain prompts mid-typing. Assistant work happens in the background and
   shows up as marks by the text and in the sidebar.
 - Work is tracked in GitHub Issues.
+- Log through the `log` macros. Never log keys or tokens, and never log
+  document text directly: pass it through `wingman_log::text` (or `log.text`
+  in the service), which shows only its size unless `WINGMAN_LOG_TEXT=1`.

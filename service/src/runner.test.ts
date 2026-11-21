@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { NOT_SIGNED_IN, friendlyError, taskResult } from "./runner";
+import { NOT_SIGNED_IN, friendlyError, resultSummary, taskResult } from "./runner";
 import { COPY_EDIT_SCHEMA } from "./tasks";
 
 const schema = { schema: COPY_EDIT_SCHEMA as Record<string, unknown> };
@@ -42,4 +42,21 @@ test("tasks without a schema return the text", () => {
 
 test("early stops name the reason", () => {
   expect(() => taskResult({ subtype: "error_max_turns", is_error: true }, schema)).toThrow("Claude stopped early (error_max_turns)");
+});
+
+test("result summaries carry time, turns, cost and tokens, not text", () => {
+  const line = resultSummary({
+    subtype: "success",
+    is_error: false,
+    duration_ms: 4200,
+    duration_api_ms: 3900,
+    num_turns: 3,
+    total_cost_usd: 0.01234,
+    usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 30, cache_creation_input_tokens: 40 } as never,
+    result: "the reply text",
+  });
+  expect(line).toBe(
+    "result success in 4200ms (API 3900ms), 3 turns, $0.0123, tokens in 10, out 20, cache read 30, cache write 40",
+  );
+  expect(line).not.toContain("reply text");
 });

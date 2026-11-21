@@ -10,6 +10,7 @@ mod dictation;
 mod document;
 mod findings;
 mod jev;
+mod logging;
 mod prefilter;
 mod quit;
 mod reflow;
@@ -54,6 +55,10 @@ actions!(
         IncreaseFontSize,
         DecreaseFontSize,
         ResetFontSize,
+        ShowLogFile,
+        ShowCrashReports,
+        ReportProblem,
+        ToggleVerboseLogging,
         About,
         CloseAbout,
         Quit
@@ -94,6 +99,10 @@ pub(crate) fn bind_keys(cx: &mut App) {
 
 fn main() {
     let path = std::env::args_os().nth(1).map(PathBuf::from);
+    logging::init();
+    if let Some(p) = &path {
+        log::info!("opening {} from the command line", p.display());
+    }
 
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
@@ -150,6 +159,13 @@ fn main() {
                     MenuItem::separator(),
                     MenuItem::action("Setup…", ShowSetup),
                 ]),
+                Menu::new("Help").items([
+                    MenuItem::action("Report a Problem…", ReportProblem),
+                    MenuItem::separator(),
+                    MenuItem::action("Show Log File", ShowLogFile),
+                    MenuItem::action("Show Crash Reports", ShowCrashReports),
+                    MenuItem::action("Verbose Logging", ToggleVerboseLogging),
+                ]),
             ]);
 
             let options = WindowOptions {
@@ -168,6 +184,7 @@ fn main() {
                 cx.new(|cx| Workspace::new(path.clone(), window, cx))
             })
             .expect("couldn't open the main window");
+            log::info!("main window open");
             cx.activate(true);
         });
 }

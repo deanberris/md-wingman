@@ -198,6 +198,34 @@ paragraph must score above for the pre-filter to act on it. `appearance` is
 `"system"`, `"light"` or `"dark"`. `setup_done` is set once you finish setup with Claude Code signed in, so setup stops opening at launch. A `null` font means the default: Menlo for
 the editor and the system font for the preview.
 
+### Logs
+
+md-wingman keeps one log for the app and its assistant service, at
+`~/Library/Logs/md-wingman/md-wingman.log` (Console.app shows it too). Help ▸
+Show Log File reveals it in Finder, ready to attach to a bug report. It records
+startup, the assistant service starting and stopping, sign-in mode, every check
+(how long it took, how many turns, its cost and tokens, or why it failed), Jev's
+grades against the threshold, and errors. It rotates by itself at 5 MB and
+keeps the three before it as `md-wingman.log.1` (newest) to `.3`.
+
+If md-wingman crashes (a panic in the app, or the assistant service crashing
+or stopping unexpectedly), it writes a crash report to
+`~/Library/Logs/md-wingman/crashes/`, with the stack trace and the log lines
+before it, and keeps the last ten. The next launch says so in the status bar,
+without interrupting. Help ▸ Report a Problem… opens a new GitHub issue with the
+version and system filled in, and shows the files to attach. Help ▸ Show Crash
+Reports finds them later. Crashes a panic can't catch, such as a segfault, end up
+in macOS's own reports (`~/Library/Logs/DiagnosticReports`), and the next launch
+mentions those too.
+
+The log and crash reports never hold the TypeSafe key, API keys or sign-in tokens, and they leave
+out your writing: a passage appears only as its length and a short fingerprint.
+
+- Help ▸ Verbose Logging (or `"verbose_logging": true`) adds debug detail, such as each tool Claude uses and each grade Jev skips.
+- `WINGMAN_LOG=error|warn|info|debug|trace` sets the level for one run, and wins over the setting.
+- `WINGMAN_LOG_TEXT=1` puts the text of passages in the log too, for debugging. Don't share a log made this way unless you're happy to share the writing in it.
+- `WINGMAN_LOG_FILE=path` writes it somewhere else.
+
 ### Try the assistant without the app
 
 ```sh
@@ -223,6 +251,7 @@ on macOS for every pull request.
 
 - `crates/md-wingman`: the app, built with [gpui](https://gpui.rs) and [gpui-component](https://github.com/longbridge/gpui-component)
 - `crates/wingman-client`: Rust client for the assistant service
+- `crates/wingman-log`: the log file: levels, rotation, keeping secrets and writing out of it
 - `service/`: the assistant service, in TypeScript on the Claude Agent SDK
 - `site/`: the [project website](https://deanberris.github.io/md-wingman/), published to GitHub Pages by `.github/workflows/pages.yml`
 - `docs/`: [architecture](docs/architecture.md) and the [UI toolkit choice](docs/toolkit-choice.md)

@@ -149,8 +149,20 @@ impl Workspace {
 
         let (settings, settings_error) = match services.settings {
             Some(settings) => (settings, None),
-            None => Settings::load(),
+            None => {
+                let loaded = Settings::load();
+                log::info!(
+                    "settings from {}",
+                    Settings::path().map_or("(nowhere)".into(), |p| p.display().to_string())
+                );
+                loaded
+            }
         };
+        if let Some(e) = &settings_error {
+            log::warn!("{e}");
+        }
+        crate::logging::apply_settings(&settings);
+        crate::logging::log_settings(&settings);
         let mut this = Self {
             focus_handle: cx.focus_handle(),
             editor,
@@ -192,6 +204,9 @@ impl Workspace {
         }
         if settings_error.is_some() {
             this.notice = settings_error.map(Into::into);
+        } else if let Some(crashed) = crate::logging::take_crash_notice() {
+            // Only a note in the status bar: nothing pops up.
+            this.notice = Some(crashed.into());
         }
         this.prepare_jev(cx);
         this.start_assistant(services.start_assistant, cx);
@@ -209,16 +224,27 @@ impl Workspace {
         start: Box<dyn FnOnce() -> Result<Assistant, String> + Send>,
         cx: &mut Context<Self>,
     ) {
+        log::info!("starting the assistant");
+        let started = std::time::Instant::now();
         let start = cx.background_executor().spawn(async move { start() });
         cx.spawn(async move |this, cx| {
             let result = start.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(assistant) => {
+                        log::info!(
+                            "assistant ready in {:?}: service {}, {:?} sign-in",
+                            started.elapsed(),
+                            assistant.info.version,
+                            assistant.info.auth
+                        );
                         this.service_status = ServiceStatus::Ready(assistant.info.clone());
                         this.assistant = Some(assistant);
                     }
-                    Err(message) => this.service_status = ServiceStatus::Failed(message),
+                    Err(message) => {
+                        log::error!("assistant unavailable: {message}");
+                        this.service_status = ServiceStatus::Failed(message)
+                    }
                 }
                 cx.notify();
             });
@@ -265,13 +291,17 @@ impl Workspace {
     }
 
     pub(crate) fn set_notice(&mut self, notice: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.notice = Some(notice.into());
+        let notice = notice.into();
+        // Everything the status bar tells the writer goes in the log too.
+        log::info!(target: "notice", "{notice}");
+        self.notice = Some(notice);
         cx.notify();
     }
 
     pub(crate) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         match Document::open(&path) {
             Ok((doc, text)) => {
+                log::info!("opened {} ({})", path.display(), wingman_log::text(&text));
                 self.document = doc;
                 self.editor
                     .update(cx, |state, cx| state.set_value(text, window, cx));
@@ -284,7 +314,10 @@ impl Workspace {
                 self.reset_review(cx);
                 cx.notify();
             }
-            Err(e) => self.set_notice(format!("Couldn't open {}: {e}", path.display()), cx),
+            Err(e) => {
+                log::error!("couldn't open {}: {e}", path.display());
+                self.set_notice(format!("Couldn't open {}: {e}", path.display()), cx)
+            }
         }
     }
 
@@ -327,11 +360,19 @@ impl Workspace {
                     self.save_claims(cx);
                 }
                 self.set_dirty(false);
+                log::info!(
+                    "saved {} ({})",
+                    self.document.display_name(),
+                    wingman_log::text(&text)
+                );
                 self.notice = Some(format!("Saved {}", self.document.display_name()).into());
                 window.set_window_title(&self.title());
                 cx.notify();
             }
-            Err(e) => self.set_notice(format!("Couldn't save: {e}"), cx),
+            Err(e) => {
+                log::error!("couldn't save {:?}: {e}", path);
+                self.set_notice(format!("Couldn't save: {e}"), cx)
+            }
         }
     }
 
@@ -570,6 +611,7 @@ impl Workspace {
             return;
         }
         if let Err(e) = self.settings.save() {
+            log::error!("couldn't save settings: {e}");
             self.set_notice(format!("Couldn't save settings: {e}"), cx);
         }
     }
@@ -714,6 +756,10 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_increase_font_size))
             .on_action(cx.listener(Self::on_decrease_font_size))
             .on_action(cx.listener(Self::on_reset_font_size))
+            .on_action(cx.listener(Self::on_show_log_file))
+            .on_action(cx.listener(Self::on_show_crash_reports))
+            .on_action(cx.listener(Self::on_report_problem))
+            .on_action(cx.listener(Self::on_toggle_verbose_logging))
             .size_full()
             .bg(background)
             .text_color(foreground)
