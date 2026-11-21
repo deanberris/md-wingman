@@ -2,9 +2,11 @@
 //!
 //! Usage: md-wingman [FILE]
 
+mod about;
 mod appearance;
 mod assistant;
 mod continuous;
+mod dictation;
 mod document;
 mod findings;
 mod jev;
@@ -53,6 +55,8 @@ actions!(
         ResetFontSize,
         ShowLogFile,
         ToggleVerboseLogging,
+        About,
+        CloseAbout,
         Quit
     ]
 );
@@ -103,8 +107,13 @@ fn main() {
 
             bind_keys(cx);
             quit::init(cx);
+            about::init(cx);
             cx.set_menus([
-                Menu::new("md-wingman").items([MenuItem::action("Quit md-wingman", Quit)]),
+                Menu::new("md-wingman").items([
+                    MenuItem::action("About md-wingman", About),
+                    MenuItem::separator(),
+                    MenuItem::action("Quit md-wingman", Quit),
+                ]),
                 Menu::new("File").items([
                     MenuItem::action("New", NewFile),
                     MenuItem::action("Open…", Open),

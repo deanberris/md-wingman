@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>md-wingman</title>
+  <meta name="description" content="A native macOS Markdown editor with a Claude writing assistant beside it, to copy-edit, fact-check and find references.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="wrap">
+    <p class="prompt">$ md-wingman <span class="cursor" aria-hidden="true">▌</span></p>
+    <h1>md-wingman</h1>
+    <p class="lede">A calm Markdown editor for macOS, with a Claude writing assistant beside the text: ready when you want a second opinion, out of the way when you don't.</p>
+    <nav>
+      <a href="https://github.com/deanberris/md-wingman">GitHub</a>
+      <a href="https://github.com/deanberris/md-wingman#run-it-on-a-mac">Run it on a Mac</a>
+      <a href="https://github.com/deanberris/md-wingman/issues">Issues</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section>
+      <h2>What it does</h2>
+      <dl>
+        <dt>Copy-edit</dt>
+        <dd>Select a passage, or put the cursor in a paragraph, and press <kbd>⌘E</kbd>. Suggested edits are underlined in the text, and you accept or dismiss each one.</dd>
+        <dt>Fact-check</dt>
+        <dd><kbd>⇧⌘C</kbd> flags claims that look doubtful, shaded by verdict, with an explanation and sources in the sidebar.</dd>
+        <dt>Find references</dt>
+        <dd><kbd>⇧⌘R</kbd> searches the web for sources that back a claim, and cites the one you pick as a footnote or an inline link.</dd>
+        <dt>Check as you write</dt>
+        <dd>Turn it on and md-wingman checks each new or changed paragraph once you pause, a paragraph at a time, in the background.</dd>
+        <dt>Review the whole post</dt>
+        <dd><kbd>⇧⌘D</kbd> reviews the whole draft at once while you keep writing.</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>How it behaves</h2>
+      <ul>
+        <li><strong>It never interrupts your typing.</strong> All the work happens in the background. Findings appear as marks by the text and as cards in the Assistant pane.</li>
+        <li><strong>Findings stay with their text.</strong> Edit around them and they follow it. Delete the text and they go, and undo brings them back.</li>
+        <li><strong>Raw or preview.</strong> <kbd>⌘P</kbd> switches between the Markdown and a rendered preview.</li>
+        <li><strong>Your own Claude account.</strong> A small local service makes the model calls with the Claude Agent SDK, using your Claude subscription login by default.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>How it's built</h2>
+<pre class="diagram" aria-label="The Rust app sends requests over a Unix socket to the assistant service, which calls Claude and streams replies back.">
+┌──────────────────────┐  requests   ┌──────────────────────┐
+│ md-wingman           │ ──────────▶ │ assistant service    │
+│ Rust · gpui          │             │ Claude Agent SDK     │
+│ editor and sidebar   │ ◀────────── │ TypeScript · Bun     │
+└──────────────────────┘   replies   └──────────────────────┘
+</pre>
+      <p>A native app written in Rust with <a href="https://gpui.rs">gpui</a>, talking over a local Unix socket to an assistant service that ships inside the app. The <a href="https://github.com/deanberris/md-wingman/blob/main/docs/architecture.md">architecture notes</a> have the details.</p>
+    </section>
+
+    <section>
+      <h2>Get it</h2>
+      <p>md-wingman is in early development and there's no packaged download yet. To build it from source you need Rust, Bun, Xcode's command-line tools and Claude Code, signed in:</p>
+<pre><code>git clone https://github.com/deanberris/md-wingman
+cd md-wingman
+scripts/dev.sh notes/draft.md</code></pre>
+      <p>The <a href="https://github.com/deanberris/md-wingman#run-it-on-a-mac">README</a> walks through each step.</p>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <p>Open source under the <a href="https://github.com/deanberris/md-wingman/blob/main/LICENSE">Apache License 2.0</a>. Made by <a href="https://github.com/deanberris/md-wingman/blob/main/CONTRIBUTORS.md">its contributors</a>.</p>
+  </footer>
+</body>
+</html>
