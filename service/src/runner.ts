@@ -103,6 +103,18 @@ async function runAgent(
   }
 }
 
+/** What to tell the writer when Claude Code isn't signed in. */
+export const NOT_SIGNED_IN = `Claude isn't signed in. Open Terminal, run "claude auth login", then try again.`;
+
+/**
+ * Rewrites Claude Code's errors that only make sense inside Claude Code, such
+ * as "Not logged in · Please run /login", into steps the writer can follow.
+ */
+export function friendlyError(message: string): string {
+  if (/not logged in|please run \/login/i.test(message)) return NOT_SIGNED_IN;
+  return message;
+}
+
 /**
  * Turns the SDK's result message into the task's reply, or throws with a
  * message the writer can act on.
@@ -117,7 +129,7 @@ export function taskResult(
   streamed = "",
 ): RunResult {
   if (msg.subtype !== "success") throw new Error(`Claude stopped early (${msg.subtype})`);
-  if (msg.is_error) throw new Error(msg.result?.trim() || "Claude returned an error");
+  if (msg.is_error) throw new Error(friendlyError(msg.result?.trim() || "Claude returned an error"));
   if (spec.schema) {
     if (msg.structured_output === undefined) throw new Error("Claude didn't return a structured reply");
     const data = msg.structured_output as { summary?: unknown };
