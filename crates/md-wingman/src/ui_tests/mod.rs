@@ -6,6 +6,7 @@
 //! Test modules import Kit types by name rather than `gpui_kit::*`, whose
 //! glob would shadow Rust's `#[test]` with gpui's.
 
+mod about;
 mod assistant;
 mod continuous;
 mod contract;
@@ -389,6 +390,7 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
         gpui_kit::init(cx);
         crate::bind_keys(cx);
         crate::quit::init(cx);
+        crate::about::init(cx);
         let bounds = Bounds {
             origin: Point::default(),
             size: size(px(width), px(1000.)),

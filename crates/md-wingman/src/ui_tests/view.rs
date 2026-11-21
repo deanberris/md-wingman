@@ -240,3 +240,55 @@ fn a_saved_editor_font_applies_to_the_theme(cx: &mut TestAppContext) {
     assert_eq!(family, "JetBrains Mono");
     assert_eq!(size, 18.);
 }
+
+#[gpui_kit::test]
+fn a_blank_line_between_sentences_leaves_no_stray_space(cx: &mut TestAppContext) {
+    let h = open(cx, Setup::default());
+    h.type_text(cx, "Sentence.");
+    h.press(cx, "enter");
+    h.press(cx, "enter");
+    h.type_text(cx, "Another sentence.");
+    assert_eq!(h.text(cx), "Sentence.\n\nAnother sentence.");
+}
+
+#[gpui_kit::test]
+fn a_blank_line_after_a_wrapped_paragraph_leaves_no_stray_space(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            width: 500.,
+            ..Default::default()
+        },
+    );
+    let para = "This is a long sentence that keeps going well past the edge of a narrow window so that it soft wraps onto several rows.";
+    h.type_text(cx, para);
+    h.press(cx, "enter");
+    h.press(cx, "enter");
+    h.type_text(cx, "Another sentence.");
+    assert_eq!(h.text(cx), format!("{para}\n\nAnother sentence."));
+}
+
+#[gpui_kit::test]
+fn a_dictated_phrase_after_a_blank_line_loses_its_leading_space(cx: &mut TestAppContext) {
+    // Dictation apps paste each phrase, with a space in front when they guess
+    // the cursor follows a word.
+    let h = open(cx, Setup::default());
+    h.type_text(cx, "Sentence.");
+    h.press(cx, "enter");
+    h.press(cx, "enter");
+    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(
+        " Another sentence.".into(),
+    ));
+    h.press(cx, &shortcut("v"));
+    assert_eq!(h.text(cx), "Sentence.\n\nAnother sentence.");
+
+    // Mid-line, the space is wanted.
+    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(" And more.".into()));
+    h.press(cx, &shortcut("v"));
+    assert_eq!(h.text(cx), "Sentence.\n\nAnother sentence. And more.");
+
+    // It was one change: undo takes the whole phrase out.
+    h.press(cx, UNDO);
+    h.press(cx, UNDO);
+    assert_eq!(h.text(cx), "Sentence.\n\n");
+}

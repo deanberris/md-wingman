@@ -693,6 +693,7 @@ impl Render for Workspace {
             .id("workspace")
             .key_context("Workspace")
             .track_focus(&self.focus_handle)
+            .capture_action(cx.listener(Self::on_paste_capture))
             .on_action(cx.listener(Self::on_new))
             .on_action(cx.listener(Self::on_open))
             .on_action(cx.listener(Self::on_save))
