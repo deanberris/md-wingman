@@ -41,9 +41,14 @@ impl Global for QuitState {}
 pub fn init(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| request_quit(cx));
     // A closed window can't be reopened, so closing it ends the app. The
-    // window only closes once its own prompt said so.
+    // window only closes once its own prompt said so. The About window
+    // alone doesn't keep the app running.
     cx.on_window_closed(|cx, _| {
-        if cx.windows().is_empty() {
+        let windows = cx.windows();
+        if windows
+            .iter()
+            .all(|w| crate::about::is_about_window(*w, cx))
+        {
             quit_now(cx);
         }
     })
