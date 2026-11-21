@@ -71,6 +71,7 @@ pub fn request_quit(cx: &mut App) {
     if state.asking {
         return;
     }
+    log::info!("quit requested");
     state.workspaces.retain(|(_, ws)| ws.upgrade().is_some());
     let workspaces = state.workspaces.clone();
     state.asking = true;
@@ -85,6 +86,7 @@ pub fn request_quit(cx: &mut App) {
                 _ => true,
             };
             if !go_on {
+                log::info!("quit cancelled");
                 cx.update(|cx| cx.default_global::<QuitState>().asking = false);
                 return;
             }
@@ -95,6 +97,8 @@ pub fn request_quit(cx: &mut App) {
 }
 
 fn quit_now(cx: &mut App) {
+    log::info!("quitting");
+    log::logger().flush();
     CONFIRMED.store(true, Ordering::SeqCst);
     let state = cx.default_global::<QuitState>();
     state.asking = false;

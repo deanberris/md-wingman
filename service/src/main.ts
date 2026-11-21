@@ -2,13 +2,16 @@
 //
 // Usage: wingman-service --socket <path>
 //
-// The app starts this process and stops it when it quits. Logs go to stderr.
+// The app starts this process and stops it when it quits. Logs go to stderr
+// as "LEVEL message" lines, which the app writes to its log file (see log.ts).
 // Set WINGMAN_FAKE=1 to answer with canned replies instead of calling Claude.
 // WINGMAN_AUTH picks the sign-in mode: subscription (default) or api_key.
 
 import { authModeFromEnv, type AuthMode } from "./auth";
 import { fakeRunner, makeAgentRunner, type Runner } from "./runner";
-import { startServer } from "./server";
+import { SERVICE_VERSION, startServer } from "./server";
+import { log } from "./log";
+import { resolveClaudePath } from "./claudePath";
 
 function argValue(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -21,9 +24,12 @@ if (!socketPath) {
   process.exit(2);
 }
 
-const log = (msg: string) => console.error(`[wingman-service] ${msg}`);
+log.info(
+  `wingman-service ${SERVICE_VERSION} starting: pid ${process.pid}, bun ${Bun.version}, ${process.platform}/${process.arch}, log level ${log.level}${log.includeText ? ", logging document text" : ""}`,
+);
 const fake = process.env.WINGMAN_FAKE === "1";
-if (fake) log("WINGMAN_FAKE=1: using canned replies, not Claude");
+if (fake) log.warn("WINGMAN_FAKE=1: using canned replies, not Claude");
+if (process.env.WINGMAN_MODEL) log.info(`model: ${process.env.WINGMAN_MODEL}`);
 
 let auth: AuthMode;
 let runner: Runner;
@@ -31,28 +37,42 @@ try {
   auth = authModeFromEnv();
   runner = fake ? fakeRunner : makeAgentRunner(auth);
 } catch (err) {
-  log(err instanceof Error ? err.message : String(err));
+  log.error(err instanceof Error ? err.message : String(err));
   process.exit(2);
 }
-log(`sign-in mode: ${auth}`);
+log.info(`sign-in mode: ${auth}`);
+if (!fake) {
+  try {
+    log.info(`Claude Code: ${resolveClaudePath() ?? "the Agent SDK's bundled copy"}`);
+  } catch (err) {
+    // Not fatal here: each task reports it to the writer.
+    log.error(err instanceof Error ? err.message : String(err));
+  }
+}
 
 const server = startServer({
   socketPath,
   runner,
   auth,
   log,
-  onShutdown: () => shutdown(),
+  onShutdown: () => shutdown("the app asked"),
 });
 
-function shutdown() {
+function shutdown(reason = "asked to") {
+  log.info(`shutting down (${reason})`);
   server.stop();
   process.exit(0);
 }
 
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("uncaughtException", (err) => {
+  log.error(`uncaught: ${err.stack ?? err}`);
+  process.exit(1);
+});
+process.on("unhandledRejection", (err) => log.error(`unhandled rejection: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`));
 
 // If the app dies without stopping us, our stdin closes: exit too, so no
 // orphaned service is left running.
-process.stdin.on("end", shutdown);
+process.stdin.on("end", () => shutdown("the app went away"));
 process.stdin.resume();

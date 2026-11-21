@@ -500,6 +500,12 @@ impl Workspace {
                     next = Some((k, p.clone()));
                     break;
                 }
+                log::debug!(
+                    target: "continuous",
+                    "p{fp:x}: skipping {k:?}, graded {:.0}% (threshold {:.0}%)",
+                    grade_for(&grades, k) * 100.,
+                    threshold * 100.
+                );
                 self.continuous.mark(k, paragraph);
             }
             if next.is_some() {
@@ -510,6 +516,12 @@ impl Workspace {
             return;
         };
         let sent = text[passage.clone()].to_string();
+        log::info!(
+            target: "continuous",
+            "checking p{:x} {} for {kind:?}",
+            fingerprint(&sent),
+            wingman_log::text(&sent)
+        );
         self.continuous.mark(kind, &sent);
         let status = match self.start_run_on(kind, passage, true, cx) {
             Some(id) => {
@@ -565,6 +577,14 @@ impl Workspace {
             self.continuous.running = Some((running, sent));
             return;
         }
+        match &failure {
+            None => {
+                log::info!(target: "continuous", "{kind:?} check of p{:x} done: {found} findings", fingerprint(&sent))
+            }
+            Some(m) => {
+                log::warn!(target: "continuous", "{kind:?} check of p{:x} ended: {m}", fingerprint(&sent))
+            }
+        }
         let status = match &failure {
             None => CheckStatus::Done(found),
             Some(m) if m == "cancelled" => {
@@ -592,6 +612,7 @@ impl Workspace {
                     // signing in to Claude) is enough to get going again.
                     let wait = (self.continuous.run_backoff * 2).clamp(RETRY_FIRST, RETRY_MAX);
                     self.continuous.run_backoff = wait;
+                    log::warn!(target: "continuous", "pausing checks for {wait:?} after a failure");
                     self.set_notice(
                         format!(
                             "Paused checking as you write: {} Trying again in {}.",
@@ -650,6 +671,7 @@ impl Workspace {
             // Still reading the Keychain: grade once it's done.
             None => return,
             Some(None) => {
+                log::warn!(target: "jev", "can't grade: no TypeSafe key");
                 self.continuous.jev_blocked = true;
                 self.set_notice(
                     "The Jev pre-filter needs a TypeSafe API key: Assistant ▸ Set TypeSafe API Key…",
@@ -659,6 +681,11 @@ impl Workspace {
             }
         };
         let model = self.settings.jev_model.clone();
+        log::debug!(
+            target: "jev",
+            "grading p{fp:x} {} with {model}",
+            wingman_log::text(&paragraph)
+        );
         let words = excerpt(&paragraph);
         let grader = self.grader.clone();
         self.continuous.grading = Some(fp);
@@ -683,6 +710,18 @@ impl Workspace {
         self.continuous._grading_task = None;
         match result {
             Ok(grades) => {
+                let kinds = self.continuous_kinds();
+                let threshold = self.settings.jev_threshold;
+                let verdicts: Vec<String> = verdicts(&grades, &kinds, threshold)
+                    .into_iter()
+                    .map(|(k, score, v)| format!("{k:?} {:.0}% {v:?}", score * 100.))
+                    .collect();
+                log::info!(
+                    target: "jev",
+                    "graded p{fp:x}: {} (acting above {:.0}%)",
+                    verdicts.join(", "),
+                    threshold * 100.
+                );
                 self.continuous.grades.insert(fp, grades);
                 self.continuous.backoff = Duration::ZERO;
                 self.continuous.retry_at = None;
@@ -695,6 +734,7 @@ impl Workspace {
                 self.continuous_tick(cx);
             }
             Err(JevError::BadKey) => {
+                log::error!(target: "jev", "TypeSafe rejected the key; grading stops until it changes");
                 self.continuous.jev_blocked = true;
                 self.set_notice(
                     "TypeSafe didn't accept the API key. Set it again: Assistant ▸ Set TypeSafe API Key…",
@@ -711,6 +751,7 @@ impl Workspace {
                     _ => backoff,
                 };
                 self.continuous.backoff = backoff;
+                log::warn!(target: "jev", "grading p{fp:x} failed ({e}); retrying in {wait:?}");
                 self.continuous.retry_at = Some(cx.background_executor().now() + wait);
                 self.set_notice(format!("{e}; trying again in {}s", wait.as_secs()), cx);
                 self.schedule_continuous_at(wait, cx);

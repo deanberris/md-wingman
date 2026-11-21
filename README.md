@@ -167,6 +167,24 @@ paragraph must score above for the pre-filter to act on it. `appearance` is
 `"system"`, `"light"` or `"dark"`. A `null` font means the default: Menlo for
 the editor and the system font for the preview.
 
+### Logs
+
+md-wingman keeps one log for the app and its assistant service, at
+`~/Library/Logs/md-wingman/md-wingman.log` (Console.app shows it too). Help ▸
+Show Log File reveals it in Finder, ready to attach to a bug report. It records
+startup, the assistant service starting and stopping, sign-in mode, every check
+(how long it took, how many turns, its cost and tokens, or why it failed), Jev's
+grades against the threshold, and errors. It keeps the last 5 MB, plus the one
+before as `md-wingman.log.1`.
+
+The log never holds the TypeSafe key, API keys or sign-in tokens, and it leaves
+out your writing: a passage appears only as its length and a short fingerprint.
+
+- Help ▸ Verbose Logging (or `"verbose_logging": true`) adds debug detail, such as each tool Claude uses and each grade Jev skips.
+- `WINGMAN_LOG=error|warn|info|debug|trace` sets the level for one run, and wins over the setting.
+- `WINGMAN_LOG_TEXT=1` puts the text of passages in the log too, for debugging. Don't share a log made this way unless you're happy to share the writing in it.
+- `WINGMAN_LOG_FILE=path` writes it somewhere else.
+
 ### Try the assistant without the app
 
 ```sh
@@ -192,6 +210,7 @@ on macOS for every pull request.
 
 - `crates/md-wingman`: the app, built with [gpui](https://gpui.rs) and [gpui-component](https://github.com/longbridge/gpui-component)
 - `crates/wingman-client`: Rust client for the assistant service
+- `crates/wingman-log`: the log file: levels, rotation, keeping secrets and writing out of it
 - `service/`: the assistant service, in TypeScript on the Claude Agent SDK
 - `docs/`: [architecture](docs/architecture.md) and the [UI toolkit choice](docs/toolkit-choice.md)
 

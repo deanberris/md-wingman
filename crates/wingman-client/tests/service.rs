@@ -90,3 +90,39 @@ fn reports_api_key_mode() {
     let info = service.connect().unwrap().hello().unwrap();
     assert_eq!(info.auth, AuthMode::ApiKey);
 }
+
+#[test]
+fn the_services_log_lines_come_back() {
+    let Some(service) = fake_service() else {
+        return;
+    };
+    let client = service.connect().unwrap();
+    client.hello().unwrap();
+    let task = client
+        .start_task(TaskKind::CopyEdit, "a secret passage", None)
+        .unwrap();
+    task.wait(|_| {}).unwrap();
+    // The log thread may be a moment behind the socket.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let lines = loop {
+        let lines = service.recent_lines();
+        if lines.iter().any(|l| l.contains("done in")) || std::time::Instant::now() > deadline {
+            break lines;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert!(
+        lines.iter().any(|l| l.contains("listening on")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("copy_edit started")),
+        "{lines:?}"
+    );
+    assert!(lines.iter().any(|l| l.contains("done in")), "{lines:?}");
+    // Document text stays out of the log by default.
+    assert!(
+        !lines.iter().any(|l| l.contains("secret passage")),
+        "{lines:?}"
+    );
+}

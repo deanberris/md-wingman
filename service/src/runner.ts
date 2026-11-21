@@ -6,8 +6,11 @@ import { claudeEnv, type AuthMode } from "./auth";
 import { resolveClaudePath } from "./claudePath";
 import type { TaskKind } from "./protocol";
 import { TASKS, buildPrompt, type TaskSpec } from "./tasks";
+import { log as defaultLog, type Logger } from "./log";
 
 export interface RunInput {
+  /** The request's id, for the log. */
+  id?: string;
   task: TaskKind;
   text: string;
   context?: string;
@@ -36,21 +39,26 @@ function workDir(): string {
  * The real runner: drives Claude through the Agent SDK, which runs the user's
  * Claude Code. `auth` decides which credential Claude Code may see (see auth.ts).
  */
-export const makeAgentRunner = (auth: AuthMode, sdk: { query: QueryFn } = { query }): Runner => {
+export const makeAgentRunner = (auth: AuthMode, sdk: { query: QueryFn } = { query }, log: Logger = defaultLog): Runner => {
   // Built once, so a bad configuration fails at startup rather than per task.
   const env = { ...claudeEnv(auth), CLAUDE_AGENT_SDK_CLIENT_APP: "md-wingman/0.1.0" };
-  return (input) => runAgent(input, env, sdk.query);
+  return (input) => runAgent(input, env, sdk.query, log);
 };
 
 /** The Agent SDK's `query`. Tests pass a scripted one to `makeAgentRunner`. */
 export type QueryFn = (args: Parameters<typeof query>[0]) => AsyncIterable<SDKMessage>;
 
 async function runAgent(
-  { task, text, context, signal, onDelta, onStatus }: RunInput,
+  { id = "?", task, text, context, signal, onDelta, onStatus }: RunInput,
   env: Record<string, string | undefined>,
   query: QueryFn,
+  log: Logger,
 ): Promise<RunResult> {
   const spec = TASKS[task];
+  const claudePath = resolveClaudePath();
+  log.debug(
+    `task ${id}: Claude Code ${claudePath ?? "(bundled)"}, model ${process.env.WINGMAN_MODEL || "default"}, tools [${spec.tools.join(", ")}], max ${spec.maxTurns} turns`,
+  );
   const abortController = new AbortController();
   const onAbort = () => abortController.abort();
   signal.addEventListener("abort", onAbort, { once: true });
@@ -68,7 +76,7 @@ async function runAgent(
         maxTurns: spec.maxTurns,
         outputFormat: spec.schema ? { type: "json_schema", schema: spec.schema } : undefined,
         model: process.env.WINGMAN_MODEL || undefined,
-        pathToClaudeCodeExecutable: resolveClaudePath(),
+        pathToClaudeCodeExecutable: claudePath,
         includePartialMessages: true,
         persistSession: false,
         // Don't pick up the user's CLAUDE.md files or project settings.
@@ -76,6 +84,9 @@ async function runAgent(
         cwd: workDir(),
         abortController,
         env,
+        stderr: (data: string) => {
+          for (const line of data.split("\n")) if (line.trim()) log.debug(`task ${id}: claude: ${line.trim()}`);
+        },
       },
     });
 
@@ -92,15 +103,37 @@ async function runAgent(
           // StructuredOutput is how the final answer is delivered, not a step to report.
           onStatus(ev.content_block.name === "StructuredOutput" ? "Writing up" : `Using ${ev.content_block.name}`);
         }
+      } else if (msg.type === "system" && msg.subtype === "init") {
+        log.info(`task ${id}: Claude Code ${msg.claude_code_version ?? "?"}, model ${msg.model}, credential ${msg.apiKeySource}`);
+      } else if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
+        for (const block of msg.message.content) {
+          if (block.type === "tool_use" || block.type === "server_tool_use") log.debug(`task ${id}: tool ${block.name}`);
+        }
       } else if (msg.type === "result") {
+        log.info(`task ${id}: ${resultSummary(msg)}`);
+        if (msg.subtype === "success" && msg.is_error) log.warn(`task ${id}: Claude said: ${msg.result?.trim()}`);
         return taskResult(msg, spec, streamed);
       }
     }
     if (signal.aborted) throw new Error("cancelled");
+    log.warn(`task ${id}: the SDK ended without a result message`);
     return { text: streamed };
   } finally {
     signal.removeEventListener("abort", onAbort);
   }
+}
+
+/** A result message's outcome, time, turns, cost and tokens, for the log. */
+export function resultSummary(msg: Partial<SDKResultMessage> & Pick<SDKResultMessage, "subtype">): string {
+  const u = (msg.usage ?? {}) as Partial<Record<string, number>>;
+  const tokens = [
+    `in ${u.input_tokens ?? 0}`,
+    `out ${u.output_tokens ?? 0}`,
+    `cache read ${u.cache_read_input_tokens ?? 0}`,
+    `cache write ${u.cache_creation_input_tokens ?? 0}`,
+  ].join(", ");
+  const cost = typeof msg.total_cost_usd === "number" ? `$${msg.total_cost_usd.toFixed(4)}` : "?";
+  return `result ${msg.subtype}${msg.is_error ? " (error)" : ""} in ${msg.duration_ms ?? "?"}ms (API ${msg.duration_api_ms ?? "?"}ms), ${msg.num_turns ?? "?"} turns, ${cost}, tokens ${tokens}`;
 }
 
 /** What to tell the writer when Claude Code isn't signed in. */

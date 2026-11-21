@@ -41,6 +41,8 @@ pub struct Settings {
     pub editor_font_size: f32,
     /// The preview's font; the system font when unset.
     pub preview_font: Option<String>,
+    /// Log at debug level (Help ▸ Verbose Logging). `WINGMAN_LOG` wins.
+    pub verbose_logging: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,6 +71,7 @@ impl Default for Settings {
             editor_font: None,
             editor_font_size: 14.,
             preview_font: None,
+            verbose_logging: false,
         }
     }
 }

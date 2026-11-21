@@ -88,6 +88,7 @@ impl Workspace {
     /// The Keychain couldn't be read, or access was denied: stop using Jev
     /// rather than ask again.
     fn keychain_failed(&mut self, error: String, cx: &mut Context<Self>) {
+        log::error!(target: "jev", "turning the pre-filter off: Keychain error: {error}");
         self.settings.jev_prefilter = false;
         self.save_settings(cx);
         self.set_notice(

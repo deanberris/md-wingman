@@ -44,6 +44,8 @@ pub struct TaskRun {
     review: bool,
     cancel: Option<Box<dyn Fn() + Send>>,
     _events: Option<Task<()>>,
+    /// When it started, for the log.
+    started: std::time::Instant,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,6 +138,7 @@ impl Workspace {
         {
             Ok(r) => r,
             Err(e) => {
+                log::error!(target: "runs", "couldn't start a {kind:?} run: {e}");
                 self.set_notice(e, cx);
                 return None;
             }
@@ -143,6 +146,13 @@ impl Workspace {
 
         let id = self.next_run_id;
         self.next_run_id += 1;
+        log::info!(
+            target: "runs",
+            "run {id}: {kind:?} {} started on {}, context {} bytes",
+            if background { "in the background" } else { "from the menu" },
+            wingman_log::text(&passage_text),
+            context.as_ref().map_or(0, String::len)
+        );
         let mut events = running.events;
         let task = cx.spawn(async move |this, cx| {
             while let Some(event) = events.next().await {
@@ -176,6 +186,7 @@ impl Workspace {
                 review: false,
                 cancel: Some(running.cancel),
                 _events: Some(task),
+                started: std::time::Instant::now(),
             },
         );
         cx.notify();
@@ -202,6 +213,7 @@ impl Workspace {
     }
 
     pub(crate) fn cancel_run(&mut self, id: usize, cx: &mut Context<Self>) {
+        log::info!(target: "runs", "run {id}: cancelling");
         if let Some(cancel) = self.run_mut(id).and_then(|r| r.cancel.take()) {
             cancel();
         }
@@ -263,17 +275,38 @@ impl Workspace {
                 }
             }
             Event::Status { message } => {
+                log::debug!(target: "runs", "run {id}: {message}");
                 if let Some(run) = self.run_mut(id) {
                     run.state = RunState::Running(format!("{message}…"));
                 }
             }
             Event::Done { text, data } => {
                 let failure = self.finish_run(id, text, data, cx);
+                if let Some(run) = self.run_mut(id) {
+                    match &failure {
+                        None => log::info!(
+                            target: "runs",
+                            "run {id}: {:?} done in {:?}, {} findings",
+                            run.kind,
+                            run.started.elapsed(),
+                            run.items.len()
+                        ),
+                        Some(e) => log::error!(target: "runs", "run {id}: {e}"),
+                    }
+                }
                 if self.run_mut(id).is_some_and(|r| r.background) {
                     self.end_background_run(id, failure, cx);
                 }
             }
             Event::Error { message } => {
+                if let Some(run) = self.run_mut(id) {
+                    let elapsed = run.started.elapsed();
+                    if message == "cancelled" {
+                        log::info!(target: "runs", "run {id}: cancelled after {elapsed:?}");
+                    } else {
+                        log::warn!(target: "runs", "run {id}: {:?} failed after {elapsed:?}: {message}", run.kind);
+                    }
+                }
                 if self.run_mut(id).is_some_and(|r| r.background) {
                     self.end_background_run(id, Some(message), cx);
                 } else if let Some(run) = self.run_mut(id) {

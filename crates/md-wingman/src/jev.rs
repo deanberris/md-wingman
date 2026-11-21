@@ -65,13 +65,36 @@ pub struct Jev;
 
 impl Grader for Jev {
     fn load_key(&self) -> Result<Option<String>, String> {
-        load_key()
+        let result = load_key();
+        match &result {
+            Ok(Some(key)) => {
+                // Keep it out of the log, whatever ends up quoting it.
+                wingman_log::add_secret(key);
+                log::info!(target: "jev", "TypeSafe key found ({} characters)", key.len());
+            }
+            Ok(None) => log::info!(target: "jev", "no TypeSafe key in the Keychain"),
+            Err(e) => {
+                log::error!(target: "jev", "couldn't read the TypeSafe key from the Keychain: {e}")
+            }
+        }
+        result
     }
     fn store_key(&self, key: &str) -> Result<(), String> {
-        store_key(key)
+        wingman_log::add_secret(key);
+        let result = store_key(key);
+        match &result {
+            Ok(()) => log::info!(target: "jev", "saved a TypeSafe key in the Keychain"),
+            Err(e) => log::error!(target: "jev", "couldn't save the TypeSafe key: {e}"),
+        }
+        result
     }
     fn clear_key(&self) -> Result<(), String> {
-        clear_key()
+        let result = clear_key();
+        match &result {
+            Ok(()) => log::info!(target: "jev", "removed the TypeSafe key from the Keychain"),
+            Err(e) => log::error!(target: "jev", "couldn't remove the TypeSafe key: {e}"),
+        }
+        result
     }
     fn grade(&self, key: &str, model: &str, paragraph: &str) -> Result<Grades, JevError> {
         grade(key, model, paragraph)
@@ -282,6 +305,7 @@ pub fn parse_grades(reply: &Value) -> Result<Grades, String> {
 /// Grades a paragraph. Blocks, so call it off the main thread.
 pub fn grade(key: &str, model: &str, paragraph: &str) -> Result<Grades, JevError> {
     if std::env::var_os("WINGMAN_FAKE").is_some() {
+        log::debug!(target: "jev", "WINGMAN_FAKE: canned grades");
         return Ok(fake_grades(paragraph));
     }
     let body = call(key, request_body(model, paragraph))?;
@@ -292,6 +316,7 @@ pub fn grade(key: &str, model: &str, paragraph: &str) -> Result<Grades, JevError
 /// call it off the main thread.
 pub fn grade_readiness(key: &str, model: &str, document: &str) -> Result<f32, JevError> {
     if std::env::var_os("WINGMAN_FAKE").is_some() {
+        log::debug!(target: "jev", "WINGMAN_FAKE: canned readiness");
         return Ok(fake_readiness(document));
     }
     let body = call(key, readiness_request_body(model, document))?;
@@ -300,6 +325,27 @@ pub fn grade_readiness(key: &str, model: &str, document: &str) -> Result<f32, Je
 
 /// Sends a request to Jev and returns its reply.
 fn call(key: &str, request: Value) -> Result<Value, JevError> {
+    let started = std::time::Instant::now();
+    let questions: Vec<String> = request["questions"]
+        .as_object()
+        .map(|q| q.keys().cloned().collect())
+        .unwrap_or_default();
+    let state_bytes = request["state"].as_str().map_or(0, str::len);
+    log::debug!(
+        target: "jev",
+        "asking {} ({}) about {state_bytes} bytes",
+        request["model"].as_str().unwrap_or("?"),
+        questions.join(", ")
+    );
+    let result = send(key, request);
+    match &result {
+        Ok(_) => log::debug!(target: "jev", "answered in {:?}", started.elapsed()),
+        Err(e) => log::warn!(target: "jev", "failed after {:?}: {e:?}", started.elapsed()),
+    }
+    result
+}
+
+fn send(key: &str, request: Value) -> Result<Value, JevError> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(30)))
@@ -374,6 +420,7 @@ fn keychain() -> Result<keyring::Entry, String> {
 /// The stored key, if there is one.
 pub fn load_key() -> Result<Option<String>, String> {
     if let Some(key) = std::env::var_os("WINGMAN_JEV_KEY") {
+        log::info!(target: "jev", "using the TypeSafe key from WINGMAN_JEV_KEY");
         return Ok(Some(key.to_string_lossy().into_owned()));
     }
     match keychain()?.get_password() {
