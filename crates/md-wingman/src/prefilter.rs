@@ -31,21 +31,71 @@ impl Workspace {
         // References join the checks; what's already written counts as done.
         self.continuous_baseline(cx);
         if on {
-            if self.continuous.has_key(&*self.grader) {
-                self.set_notice(
+            // Read the key now, while you're turning it on, rather than
+            // later in the middle of writing.
+            match self.continuous.key(&*self.grader) {
+                Ok(Some(_)) => self.set_notice(
                     format!(
                         "Jev pre-filter on: acting on grades above {:.0}%",
                         self.settings.jev_threshold * 100.
                     ),
                     cx,
-                );
-            } else {
-                self.open_key_panel(window, cx);
+                ),
+                Ok(None) => self.open_key_panel(window, cx),
+                Err(e) => self.keychain_failed(e, cx),
             }
         } else {
             self.set_notice("Jev pre-filter off", cx);
         }
         cx.notify();
+    }
+
+    /// At launch: read the key in the background, before any writing needs
+    /// it, so a Keychain prompt comes up front and never mid-sentence.
+    pub(crate) fn prepare_jev(&mut self, cx: &mut Context<Self>) {
+        if !self.settings.jev_prefilter {
+            return;
+        }
+        let grader = self.grader.clone();
+        let read = cx
+            .background_executor()
+            .spawn(async move { grader.load_key() });
+        cx.spawn(async move |this, cx| {
+            let result = read.await;
+            let _ = this.update(cx, |this, cx| this.jev_key_read(result, cx));
+        })
+        .detach();
+    }
+
+    fn jev_key_read(&mut self, result: Result<Option<String>, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(key) => {
+                let missing = key.is_none();
+                self.continuous.key_changed(key);
+                if missing {
+                    self.continuous.block_until_key();
+                    self.set_notice(
+                        "The Jev pre-filter needs a TypeSafe API key: Assistant ▸ Set TypeSafe API Key…",
+                        cx,
+                    );
+                }
+                self.continuous_tick(cx);
+            }
+            Err(e) => self.keychain_failed(e, cx),
+        }
+    }
+
+    /// The Keychain couldn't be read, or access was denied: stop using Jev
+    /// rather than ask again.
+    fn keychain_failed(&mut self, error: String, cx: &mut Context<Self>) {
+        self.settings.jev_prefilter = false;
+        self.save_settings(cx);
+        self.set_notice(
+            format!(
+                "Turned the Jev pre-filter off: couldn't read the TypeSafe key from the Keychain ({error})"
+            ),
+            cx,
+        );
     }
 
     pub(crate) fn on_set_jev_key(

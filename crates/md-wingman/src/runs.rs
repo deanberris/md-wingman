@@ -444,7 +444,7 @@ impl Workspace {
                     .items_center()
                     .text_xs()
                     .text_color(theme.muted_foreground)
-                    .child(div().flex_1().child(if jev {
+                    .child(div().flex_1().min_w_0().child(if jev {
                         format!(
                             "When you pause after a sentence, Jev grades the paragraph; checks run above {:.0}%.",
                             self.settings.jev_threshold * 100.
@@ -452,7 +452,7 @@ impl Workspace {
                     } else {
                         "Every changed paragraph is checked.".to_string()
                     }))
-                    .child(
+                    .child(div().flex_none().child(
                         Button::new("jev-toggle")
                             .label(if jev {
                                 "Jev pre-filter: on"
@@ -465,7 +465,7 @@ impl Workspace {
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.set_jev_prefilter(!jev, window, cx)
                             })),
-                    ),
+                    )),
             );
         }
         if self.settings.continuous && self.settings.jev_prefilter {

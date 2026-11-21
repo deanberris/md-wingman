@@ -126,15 +126,24 @@ impl Continuous {
         self.backoff = Duration::ZERO;
     }
 
-    pub fn has_key(&mut self, grader: &dyn Grader) -> bool {
-        self.key(grader).is_ok_and(|k| k.is_some())
-    }
-
-    fn key(&mut self, grader: &dyn Grader) -> Result<Option<String>, String> {
+    /// The key, reading the Keychain only if it hasn't been read yet.
+    pub(crate) fn key(&mut self, grader: &dyn Grader) -> Result<Option<String>, String> {
         if self.jev_key.is_none() {
             self.jev_key = Some(grader.load_key()?);
         }
         Ok(self.jev_key.clone().flatten())
+    }
+
+    /// The key as read so far: `None` until the Keychain has been read.
+    /// Grading never reads the Keychain itself, so a prompt can't appear
+    /// while you write.
+    pub(crate) fn cached_key(&self) -> Option<Option<String>> {
+        self.jev_key.clone()
+    }
+
+    /// Grading waits until a key is set.
+    pub fn block_until_key(&mut self) {
+        self.jev_blocked = true;
     }
 
     fn mark(&mut self, kind: TaskKind, text: &str) {
@@ -513,20 +522,14 @@ impl Workspace {
 
 impl Workspace {
     fn start_grading(&mut self, fp: u64, paragraph: String, cx: &mut Context<Self>) {
-        let key = match self.continuous.key(&*self.grader) {
-            Ok(Some(key)) => key,
-            Ok(None) => {
+        let key = match self.continuous.cached_key() {
+            Some(Some(key)) => key,
+            // Still reading the Keychain: grade once it's done.
+            None => return,
+            Some(None) => {
                 self.continuous.jev_blocked = true;
                 self.set_notice(
                     "The Jev pre-filter needs a TypeSafe API key: Assistant ▸ Set TypeSafe API Key…",
-                    cx,
-                );
-                return;
-            }
-            Err(e) => {
-                self.continuous.jev_blocked = true;
-                self.set_notice(
-                    format!("Couldn't read the TypeSafe key from the Keychain: {e}"),
                     cx,
                 );
                 return;

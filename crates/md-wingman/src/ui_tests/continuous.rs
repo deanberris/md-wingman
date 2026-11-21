@@ -411,3 +411,69 @@ fn a_busy_jev_is_retried_after_a_backoff(cx: &mut TestAppContext) {
     assert_eq!(h.jev.calls(), 2);
     assert_eq!(h.assistant.request_count(), 1);
 }
+
+#[gpui_kit::test]
+fn the_key_is_read_at_launch_and_never_while_writing(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            text: FIRST,
+            settings: settings(true),
+            ..Default::default()
+        },
+    );
+    cx.run_until_parked();
+    assert_eq!(h.jev.key_reads(), 1);
+    answer_copy_edits(&h);
+    h.jev.grade_with(|_| Ok(grades(0.9, 0., 0.)));
+    write_second(&h, cx, "Written once the key was already in memory.");
+    h.wait(cx, PAUSE + 10);
+    h.type_text(cx, " And more writing after the check.");
+    h.wait(cx, PAUSE + 10);
+    assert!(h.jev.calls() >= 1);
+    assert_eq!(h.jev.key_reads(), 1);
+}
+
+#[gpui_kit::test]
+fn a_denied_keychain_turns_jev_off_at_launch(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            text: FIRST,
+            settings: settings(true),
+            keychain_error: Some("User canceled the operation."),
+            ..Default::default()
+        },
+    );
+    cx.run_until_parked();
+    assert!(!h.read(cx, |ws, _| ws.settings.jev_prefilter));
+    assert!(h
+        .notice(cx)
+        .starts_with("Turned the Jev pre-filter off: couldn't read the TypeSafe key"));
+    write_second(&h, cx, "Written after the Keychain said no to the key.");
+    h.wait(cx, PAUSE + 10);
+    assert_eq!(h.jev.calls(), 0);
+    assert_eq!(h.jev.key_reads(), 1);
+}
+
+#[gpui_kit::test]
+fn grades_show_in_the_pane_while_you_keep_typing(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            text: FIRST,
+            settings: settings(true),
+            ..Default::default()
+        },
+    );
+    answer_copy_edits(&h);
+    h.jev.grade_with(|_| Ok(grades(0.2, 0.1, 0.)));
+    write_second(&h, cx, "A clean paragraph that needs nothing at all.");
+    h.wait(cx, PAUSE + 10);
+    let report = h.read(cx, |ws, _| ws.continuous.last_grade().cloned());
+    assert_eq!(report.map(|r| r.grades), Some(grades(0.2, 0.1, 0.)));
+    assert_eq!(h.assistant.request_count(), 0);
+    // Typing goes on into the editor while the grade is on show.
+    h.type_text(cx, " Still typing.");
+    assert!(h.text(cx).ends_with("needs nothing at all. Still typing."));
+}

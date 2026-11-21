@@ -171,6 +171,7 @@ impl Workspace {
         if settings_error.is_some() {
             this.notice = settings_error.map(Into::into);
         }
+        this.prepare_jev(cx);
         this.start_assistant(services.start_assistant, cx);
         this.editor.update(cx, |state, cx| state.focus(window, cx));
         this
