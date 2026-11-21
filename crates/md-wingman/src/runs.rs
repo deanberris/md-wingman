@@ -23,7 +23,7 @@ use crate::workspace::{ViewMode, Workspace};
 use crate::{CopyEdit, FactCheck, FindReferences};
 
 /// Send the whole document as context only when it is reasonably small.
-const MAX_CONTEXT_BYTES: usize = 40_000;
+pub(crate) const MAX_CONTEXT_BYTES: usize = 40_000;
 
 pub struct TaskRun {
     id: usize,
@@ -40,6 +40,8 @@ pub struct TaskRun {
     /// Started by continuous mode: it has no card, and its findings go
     /// straight to the document's lists.
     background: bool,
+    /// Part of a review of the whole document (and so also `background`).
+    review: bool,
     cancel: Option<Box<dyn Fn() + Send>>,
     _events: Option<Task<()>>,
 }
@@ -111,9 +113,27 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Option<usize> {
         let text = self.text(cx);
+        let context = (text.len() <= MAX_CONTEXT_BYTES).then(|| text.clone());
+        self.start_run_with(kind, passage, background, context, cx)
+    }
+
+    /// Starts a task on a passage with the given context, and returns its
+    /// run's id.
+    pub(crate) fn start_run_with(
+        &mut self,
+        kind: TaskKind,
+        passage: Range<usize>,
+        background: bool,
+        context: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> Option<usize> {
+        let text = self.text(cx);
         let passage_text = text.get(passage.clone())?.to_string();
-        let context = (text.len() <= MAX_CONTEXT_BYTES).then_some(text.as_str());
-        let running = match self.assistant.as_ref()?.run(kind, &passage_text, context) {
+        let running = match self
+            .assistant
+            .as_ref()?
+            .run(kind, &passage_text, context.as_deref())
+        {
             Ok(r) => r,
             Err(e) => {
                 self.set_notice(e, cx);
@@ -153,12 +173,19 @@ impl Workspace {
                 summary: String::new(),
                 items: Vec::new(),
                 background,
+                review: false,
                 cancel: Some(running.cancel),
                 _events: Some(task),
             },
         );
         cx.notify();
         Some(id)
+    }
+
+    pub(crate) fn mark_review_run(&mut self, id: usize) {
+        if let Some(run) = self.run_mut(id) {
+            run.review = true;
+        }
     }
 
     pub(crate) fn run_passage(&self, id: usize) -> Option<Range<usize>> {
@@ -193,7 +220,11 @@ impl Workspace {
                 f.run = None;
             }
         }
-        self.continuous_run_ended(id, run.kind, failure, cx);
+        if run.review {
+            self.review_run_ended(id, failure, cx);
+        } else {
+            self.continuous_run_ended(id, run.kind, failure, cx);
+        }
     }
 
     /// Each card's kind and state, top first, such as "done: 2 suggested
@@ -473,6 +504,9 @@ impl Workspace {
                 list = list.child(panel);
             }
         }
+        if let Some(panel) = self.render_review_panel(&theme, cx) {
+            list = list.child(panel);
+        }
         let cards = self.runs.iter().filter(|r| !r.background).count();
         if cards == 0 && !self.findings.iter().any(Finding::visible) {
             let message: SharedString = match &self.service_status {
@@ -531,7 +565,7 @@ impl Workspace {
                     .justify_between()
                     .items_center()
                     .child(section_heading(
-                        &format!("Suggested as you write ({})", written.len()),
+                        &format!("Suggestions ({})", written.len()),
                         &theme,
                     ))
                     .when(written_edits.len() > 1, |d| {
@@ -1063,7 +1097,7 @@ impl Workspace {
     }
 }
 
-fn task_label(kind: TaskKind) -> &'static str {
+pub(crate) fn task_label(kind: TaskKind) -> &'static str {
     match kind {
         TaskKind::CopyEdit => "Copy-edit",
         TaskKind::FactCheck => "Fact-check",

@@ -82,7 +82,7 @@ Fact-checks are kept after you close their card. They are listed under "Fact-che
 
 ### Checking as you write
 
-Turn on **As you write** (⇧⌘K, or the button at the top of the sidebar) and md-wingman copy-edits and fact-checks paragraphs on its own. It waits until you stop typing for a moment (3 seconds by default), so a burst of dictation is checked once rather than word by word. Then it checks one paragraph at a time and shows what it finds under "Suggested as you write" and "Fact-checks in this document".
+Turn on **As you write** (⇧⌘K, or the button at the top of the sidebar) and md-wingman copy-edits and fact-checks paragraphs on its own. It waits until you stop typing for a moment (3 seconds by default), so a burst of dictation is checked once rather than word by word. Then it checks one paragraph at a time and shows what it finds under "Suggestions" and "Fact-checks in this document".
 
 To keep requests down:
 
@@ -105,6 +105,12 @@ md-wingman reads the key from the Keychain once per launch and keeps it in memor
 
 Ad-hoc signing (`codesign -s -`) doesn't help, because an ad-hoc signature also changes with every build.
 
+### Reviewing the whole document
+
+Assistant ▸ Review Whole Document (⇧⌘D) copy-edits, fact-checks and finds references for the whole post at once, in the background, while you keep writing. Its findings are anchored to the text like any others and listed under "Suggestions" and "Fact-checks in this document". A long post is reviewed in parts, split between paragraphs: each part goes with the whole post as context when that fits, or else with the post's headings and the text just before and after it. A paragraph you change while the review runs is reviewed again as it is now, and paragraphs it has reviewed aren't checked again as you write.
+
+It never starts by itself. With checking as you write and the Jev pre-filter on, Jev also grades now and then whether the draft looks ready for a full look-over: a complete draft, its structure settled. It asks only after you pause for 30 seconds, only once a post has a few paragraphs, and again only after the post has changed. Above 66%, the sidebar suggests a review, with a button to start it and **Not now** to put it away until you've written more.
+
 ### Appearance and fonts
 
 Click **Aa** at the top of the sidebar, or choose View ▸ Appearance and Fonts…, to pick light, dark or system mode (which follows macOS), the editor's monospace font and size, and the preview's reading font. Only fonts installed on your Mac are offered. View ▸ Toggle Dark Mode switches modes, and ⌘= / ⌘− / ⌘0 change the editor's text size. The ruler stays at its column whatever the font.
@@ -118,6 +124,7 @@ Click **Aa** at the top of the sidebar, or choose View ▸ Appearance and Fonts�
 | ⌘E | Copy-edit the selection, or the paragraph under the cursor |
 | ⇧⌘C | Fact-check the selection, or the paragraph under the cursor |
 | ⇧⌘R | Find references for the selection, or the paragraph under the cursor |
+| ⇧⌘D | Review the whole document |
 | ⇧⌘K | Check as you write, on or off |
 | ⌘= / ⌘− / ⌘0 | Bigger / smaller / default editor text |
 | ⌥⌘Q | Reflow the paragraph (or selection) to the ruler column |

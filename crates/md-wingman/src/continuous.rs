@@ -174,7 +174,16 @@ impl Continuous {
         self.jev_blocked = true;
     }
 
-    fn mark(&mut self, kind: TaskKind, text: &str) {
+    pub(crate) fn jev_blocked(&self) -> bool {
+        self.jev_blocked
+    }
+
+    /// When the writer last edited, while checking as you write.
+    pub(crate) fn last_edit(&self) -> Option<Instant> {
+        self.last_edit
+    }
+
+    pub(crate) fn mark(&mut self, kind: TaskKind, text: &str) {
         self.checked.insert((kind_key(kind), fingerprint(text)));
     }
 

@@ -10,6 +10,7 @@ mod assistant;
 mod continuous;
 mod contract;
 mod findings;
+mod review;
 mod view;
 
 use std::collections::VecDeque;
@@ -166,7 +167,12 @@ pub struct FakeJev {
     pub key_reads: AtomicUsize,
     /// Set to make reading the Keychain fail, as when access is denied.
     keychain_error: Mutex<Option<String>>,
+    /// Readiness of the whole document for a full review.
+    readiness: Mutex<ReadinessFn>,
+    pub readiness_calls: AtomicUsize,
 }
+
+type ReadinessFn = Box<dyn Fn(&str) -> Result<f32, JevError> + Send + Sync>;
 
 impl FakeJev {
     pub fn new(key: Option<&str>) -> Arc<Self> {
@@ -177,6 +183,8 @@ impl FakeJev {
             calls: AtomicUsize::new(0),
             key_reads: AtomicUsize::new(0),
             keychain_error: Mutex::default(),
+            readiness: Mutex::new(Box::new(|_| Ok(0.))),
+            readiness_calls: AtomicUsize::new(0),
         })
     }
 
@@ -194,6 +202,17 @@ impl FakeJev {
 
     pub fn queue(&self, result: Result<Grades, JevError>) {
         self.queued.lock().unwrap().push_back(result);
+    }
+
+    pub fn readiness_with(
+        &self,
+        f: impl Fn(&str) -> Result<f32, JevError> + Send + Sync + 'static,
+    ) {
+        *self.readiness.lock().unwrap() = Box::new(f);
+    }
+
+    pub fn readiness_calls(&self) -> usize {
+        self.readiness_calls.load(Ordering::SeqCst)
     }
 
     pub fn calls(&self) -> usize {
@@ -227,6 +246,10 @@ impl Grader for FakeJev {
             return result;
         }
         (self.grade.lock().unwrap())(paragraph)
+    }
+    fn grade_readiness(&self, _key: &str, _model: &str, document: &str) -> Result<f32, JevError> {
+        self.readiness_calls.fetch_add(1, Ordering::SeqCst);
+        (self.readiness.lock().unwrap())(document)
     }
 }
 

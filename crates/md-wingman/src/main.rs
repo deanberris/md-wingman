@@ -10,6 +10,7 @@ mod findings;
 mod jev;
 mod prefilter;
 mod reflow;
+mod review;
 mod ruler;
 mod runs;
 mod settings;
@@ -39,6 +40,7 @@ actions!(
         CopyEdit,
         FactCheck,
         FindReferences,
+        ReviewDocument,
         ToggleContinuous,
         ToggleJevPrefilter,
         SetJevKey,
@@ -73,6 +75,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new(key!("e"), CopyEdit, None),
         KeyBinding::new(key!("shift-c"), FactCheck, None),
         KeyBinding::new(key!("shift-r"), FindReferences, None),
+        KeyBinding::new(key!("shift-d"), ReviewDocument, None),
         KeyBinding::new(key!("alt-q"), Reflow, None),
         KeyBinding::new(key!("shift-k"), ToggleContinuous, None),
         KeyBinding::new(key!("="), IncreaseFontSize, None),
@@ -126,6 +129,7 @@ fn main() {
                     MenuItem::action("Copy-edit", CopyEdit),
                     MenuItem::action("Fact-check", FactCheck),
                     MenuItem::action("Find References", FindReferences),
+                    MenuItem::action("Review Whole Document", ReviewDocument),
                     MenuItem::separator(),
                     MenuItem::action("Check As You Write", ToggleContinuous),
                     MenuItem::action("Jev Pre-filter", ToggleJevPrefilter),
