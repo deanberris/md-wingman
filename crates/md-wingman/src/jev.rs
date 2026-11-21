@@ -217,7 +217,7 @@ pub fn clear_key() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_grades, request_body};
+    use super::{grade, load_key, parse_grades, request_body};
     use serde_json::json;
 
     #[test]
@@ -265,5 +265,33 @@ mod tests {
         };
         assert!(at(3.0) < 0.66, "style alone stays below");
         assert!(at(4.0) > 0.66, "a single error clears it");
+    }
+
+    /// Calibration against real Jev, with the key from the Keychain or
+    /// `WINGMAN_JEV_KEY`: `cargo test -p md-wingman jev_live -- --ignored --nocapture`
+    #[test]
+    #[ignore = "calls the TypeSafe API"]
+    fn jev_live_calibration() {
+        let key = load_key().unwrap().expect("no TypeSafe key");
+        let samples = [
+            ("typos", true, "I went to the confrence last weak and it was realy usefull. Their was a talk about Rust that I enjoyed alot."),
+            ("one typo", true, "The talk on memory safety was the highlight of the day, and I recieved a lot of good questions afterwards."),
+            ("clean", false, "The talk on memory safety was the highlight of the day, and I received a lot of good questions afterwards."),
+            ("clean, plain", false, "I spent Saturday morning rewriting the parser. By lunch it handled every file in the test suite, and it was twice as fast."),
+        ];
+        let mut wrong = Vec::new();
+        for (name, needs_edit, text) in samples {
+            let g = grade(&key, "jev-1.14.0", text).unwrap();
+            println!(
+                "{name:>12}: copy-edit {:.0}%  fact-check {:.0}%  references {:.0}%",
+                g.copy_edit * 100.,
+                g.fact_check * 100.,
+                g.references * 100.
+            );
+            if (g.copy_edit > 0.66) != needs_edit {
+                wrong.push(name);
+            }
+        }
+        assert!(wrong.is_empty(), "misgraded: {wrong:?}");
     }
 }
