@@ -98,11 +98,10 @@ With [Jev](https://docs.typesafe.ai), TypeSafe's scoring model, checking as you 
 
 Turn it on with the **Jev pre-filter** button in the sidebar, or from Assistant ▸ Jev Pre-filter. The first time, it asks for your TypeSafe API key ([console.typesafe.ai/keys](https://console.typesafe.ai/keys)). The key is stored in your macOS Keychain under "md-wingman", never in the settings file. To change or remove it, use Assistant ▸ Set TypeSafe API Key…. If TypeSafe rejects the key, checking pauses until you set a new one. If Jev is busy, it waits and tries again.
 
-md-wingman reads the key from the Keychain once per launch and keeps it in memory. When you build from source, macOS may still ask on every launch, because each rebuild gives the app a new code signature and macOS ties "Always Allow" to the signature. To make it stick, sign your builds with a certificate of your own:
+md-wingman reads the key from the Keychain once per launch and keeps it in memory. When you build from source, macOS may still ask on every launch, because each rebuild gives the app a new code signature and macOS ties "Always Allow" to the signature. To make it stick, sign your builds with an Apple Development certificate:
 
-1. Open Keychain Access, then Keychain Access ▸ Certificate Assistant ▸ Create a Certificate….
-2. Name it `md-wingman dev`, set Identity Type to Self-Signed Root and Certificate Type to Code Signing, and create it.
-3. Run `scripts/dev.sh` as usual. It signs the build with `md-wingman dev` when it finds it (or with `WINGMAN_CODESIGN_IDENTITY`). Choose Always Allow at the next Keychain prompt, and later rebuilds won't ask again.
+1. In Xcode, open Settings ▸ Accounts and sign in with your Apple ID. A free account is enough. Under Manage Certificates…, add an Apple Development certificate if there isn't one.
+2. Run `scripts/dev.sh` as usual. It signs the build with your Apple Development certificate (or with `WINGMAN_CODESIGN_IDENTITY`). Choose Always Allow at the next Keychain prompt, and later rebuilds won't ask again.
 
 Ad-hoc signing (`codesign -s -`) doesn't help, because an ad-hoc signature also changes with every build.
 
