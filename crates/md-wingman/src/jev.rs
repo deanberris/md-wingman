@@ -535,13 +535,23 @@ mod tests {
         // Whole documents, with whether each should clear 0.66 for a full review.
         let finished = "# Why I moved my builds to a Mac mini\n\nFor years I built everything on a laptop that sounded like a jet engine. Last spring I finally moved the builds to a Mac mini under my desk, and I want to explain why it worked better than I expected.\n\n## The problem\n\nMy laptop throttled within minutes of a full build. A clean build of the editor took eleven minutes, and the fans made calls impossible while it ran.\n\n## What changed\n\nThe mini builds the same project in four minutes, silently, while I keep working on the laptop. I push a branch, the mini picks it up, and the results arrive in my terminal before I have finished my coffee.\n\n## Was it worth it?\n\nIt paid for itself within a couple of months in time I no longer spend waiting. If your builds take longer than a cup of coffee, a small dedicated machine is worth a look.\n";
         let early = "# Why I moved my builds to a Mac mini\n\nFor years I built everything on a laptop that sounded like a jet engine.\n\n## The problem\n\nTODO: numbers from the old laptop\n\n## What changed\n\n- faster\n- quieter\n- talk about the setup?\n\n## Conclusion\n";
+        let half = "# Why I moved my builds to a Mac mini\n\nFor years I built everything on a laptop that sounded like a jet engine. Last spring I finally moved the builds to a Mac mini under my desk, and I want to explain why it worked better than I expected.\n\n## The problem\n\nMy laptop throttled within minutes of a full build. A clean build of the editor took eleven minutes, and the fans made calls impossible while it ran.\n\n## What changed\n\nThe mini builds the same project in four minutes, and\n\n## Was it worth it?\n\n(come back to this once I have the numbers)\n";
+        let essay = "# Three things dictation taught me about writing\n\nI started dictating my posts last year because my wrists hurt. I expected to lose something in the switch. Instead I picked up three habits I now rely on, even when I type.\n\nThe first is that I write the way I talk, and that turns out to be a good thing. Sentences come out shorter. I stop hedging, because hedging out loud sounds ridiculous.\n\nThe second is that a first draft is just raw material. Dictation produces a mess: repeated words, odd punctuation, the occasional misheard phrase. I stopped expecting the first pass to be right, and editing became the real work.\n\nThe third is that pauses matter. When I stop talking, it is usually because I don't yet know what I think. I now treat those pauses as a signal to step away rather than push through.\n\nNone of this needs a microphone. But it took one for me to notice it, and my writing is better for it.\n";
+        let notes = "# Post idea: build machines\n\n- laptop too loud\n- mini is faster (numbers?)\n- cost vs time saved\n- TODO: intro\n- maybe a section on CI\n";
+        let mut wrong = Vec::new();
         for (name, expect, doc) in [
             ("finished post", true, finished),
+            ("short essay", true, essay),
+            ("half-written", false, half),
             ("early draft", false, early),
+            ("notes", false, notes),
         ] {
             let r = grade_readiness(&key, "jev-1.14.0", doc).unwrap();
-            println!("{name:>12}: full review {:.0}%", r * 100.);
-            assert_eq!(r > 0.66, expect, "{name} misgraded at {r}");
+            println!("{name:>13}: full review {:.0}%", r * 100.);
+            if (r > 0.66) != expect {
+                wrong.push(format!("{name} at {:.0}%", r * 100.));
+            }
         }
+        assert!(wrong.is_empty(), "misgraded: {wrong:?}");
     }
 }
