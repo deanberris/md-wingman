@@ -1,13 +1,21 @@
 import { expect, test } from "bun:test";
-import { taskResult } from "./runner";
+import { NOT_SIGNED_IN, friendlyError, taskResult } from "./runner";
 import { COPY_EDIT_SCHEMA } from "./tasks";
 
 const schema = { schema: COPY_EDIT_SCHEMA as Record<string, unknown> };
 
-test("a signed-out Claude Code reports the real error, not a missing structured reply", () => {
+test("a signed-out Claude Code says how to sign in, not that the structured reply is missing", () => {
   // What the SDK yields when Claude Code isn't logged in.
   const msg = { subtype: "success", is_error: true, result: "Not logged in · Please run /login" } as const;
-  expect(() => taskResult(msg, schema)).toThrow("Not logged in · Please run /login");
+  expect(() => taskResult(msg, schema)).toThrow(NOT_SIGNED_IN);
+  expect(NOT_SIGNED_IN).toContain("claude auth login");
+});
+
+test("other API errors pass through unchanged", () => {
+  expect(friendlyError("API Error: 529 Overloaded")).toBe("API Error: 529 Overloaded");
+  expect(() => taskResult({ subtype: "success", is_error: true, result: "API Error: 529 Overloaded" }, schema)).toThrow(
+    "API Error: 529 Overloaded",
+  );
 });
 
 test("an error result without text still fails clearly", () => {
