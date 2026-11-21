@@ -204,6 +204,9 @@ impl Workspace {
         }
         if settings_error.is_some() {
             this.notice = settings_error.map(Into::into);
+        } else if let Some(crashed) = crate::logging::take_crash_notice() {
+            // Only a note in the status bar: nothing pops up.
+            this.notice = Some(crashed.into());
         }
         this.prepare_jev(cx);
         this.start_assistant(services.start_assistant, cx);
@@ -754,6 +757,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_decrease_font_size))
             .on_action(cx.listener(Self::on_reset_font_size))
             .on_action(cx.listener(Self::on_show_log_file))
+            .on_action(cx.listener(Self::on_show_crash_reports))
+            .on_action(cx.listener(Self::on_report_problem))
             .on_action(cx.listener(Self::on_toggle_verbose_logging))
             .size_full()
             .bg(background)

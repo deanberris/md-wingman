@@ -1,15 +1,17 @@
 // The service's log. Lines go to stderr as "LEVEL message"; the app reads
 // them and writes them to its log file under the "service" target, so the
-// level word must come first.
+// level word must come first. Each record is one line: newlines in a
+// message (a stack trace) are written as "\n" and the app turns them back.
+// FATAL is for a crash: the app writes it up as a crash report.
 //
 // WINGMAN_LOG sets the level: error, warn, info (default), debug or trace.
 // Secrets are scrubbed: API keys (sk-…), bearer tokens, and the values of
 // credential variables from the environment. Document text is never logged
 // unless WINGMAN_LOG_TEXT=1; use `textInfo` to describe it instead.
 
-export type Level = "error" | "warn" | "info" | "debug" | "trace";
+export type Level = "fatal" | "error" | "warn" | "info" | "debug" | "trace";
 
-const ORDER: Record<Level, number> = { error: 0, warn: 1, info: 2, debug: 3, trace: 4 };
+const ORDER: Record<Level, number> = { fatal: 0, error: 0, warn: 1, info: 2, debug: 3, trace: 4 };
 
 /** Environment variables whose values must never be logged. */
 const SECRET_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_FOUNDRY_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "WINGMAN_JEV_KEY"];
@@ -17,7 +19,7 @@ const SECRET_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_FOU
 export function parseLevel(value: string | undefined): Level {
   const v = (value ?? "").trim().toLowerCase();
   if (v === "warning") return "warn";
-  return v in ORDER ? (v as Level) : "info";
+  return v in ORDER && v !== "fatal" ? (v as Level) : "info";
 }
 
 /** Replaces known secrets, API keys and bearer tokens with [redacted]. */
@@ -37,6 +39,8 @@ export function fingerprint(text: string): string {
 export interface Logger {
   level: Level;
   includeText: boolean;
+  /** A crash, with its stack trace: the app files it as a crash report. */
+  fatal(msg: string): void;
   error(msg: string): void;
   warn(msg: string): void;
   info(msg: string): void;
@@ -56,12 +60,13 @@ export function createLogger(
   const secrets = SECRET_VARS.map((name) => env[name]).filter((v): v is string => !!v);
   const enabled = (l: Level) => ORDER[l] <= ORDER[level];
   const emit = (l: Level) => (msg: string) => {
-    if (enabled(l)) write(scrub(`${l.toUpperCase()} ${msg}`, secrets).replace(/\n/g, "\n    "));
+    if (enabled(l)) write(scrub(`${l.toUpperCase()} ${oneLine(msg)}`, secrets));
   };
   return {
     level,
     includeText,
     enabled,
+    fatal: emit("fatal"),
     error: emit("error"),
     warn: emit("warn"),
     info: emit("info"),
@@ -74,6 +79,11 @@ export function createLogger(
       return includeText ? `${summary} ${JSON.stringify(text.slice(0, 2000))}` : summary;
     },
   };
+}
+
+/** A message as one line: backslashes doubled, newlines as "\n". */
+export function oneLine(msg: string): string {
+  return msg.replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n");
 }
 
 /** The service's logger, set up from the environment. Quiet under `bun test`. */

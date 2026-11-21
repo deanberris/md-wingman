@@ -11,9 +11,16 @@
 //!   key (`sk-…`) or a bearer token, in case one slips into an error message.
 //! - Document text is left out unless `WINGMAN_LOG_TEXT=1`: log it with
 //!   [`text`], which otherwise shows only its length and a fingerprint.
-//! - The file is kept under [`MAX_BYTES`]; the previous one is kept beside it
-//!   as `md-wingman.log.1`.
+//! - The file rotates by itself once it reaches [`MAX_BYTES`], at launch or
+//!   while running; the last [`KEEP_ROTATED`] old ones are kept beside it as
+//!   `md-wingman.log.1` (the newest) to `.3`.
+//! - A crash (a panic in the app, or the assistant service dying) writes a
+//!   report with its stack trace and the log lines before it to `crashes/`
+//!   beside the log. See [`crash`].
 
+pub mod crash;
+
+use std::collections::VecDeque;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, IsTerminal as _, Write as _};
@@ -27,6 +34,12 @@ pub use log::{Level, LevelFilter};
 /// How big the log file grows before it is rotated.
 pub const MAX_BYTES: u64 = 5 * 1024 * 1024;
 
+/// How many rotated logs are kept.
+pub const KEEP_ROTATED: usize = 3;
+
+/// How many recent lines are kept in memory, for crash reports.
+const RECENT_LINES: usize = 300;
+
 /// The longest stretch of document text logged, with `WINGMAN_LOG_TEXT=1`.
 const MAX_TEXT_CHARS: usize = 2_000;
 
@@ -36,6 +49,8 @@ const MIN_SECRET_LEN: usize = 8;
 static SECRETS: RwLock<Vec<String>> = RwLock::new(Vec::new());
 static INCLUDE_TEXT: AtomicBool = AtomicBool::new(false);
 static PATH: OnceLock<PathBuf> = OnceLock::new();
+static APP: OnceLock<String> = OnceLock::new();
+static RECENT: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 
 /// How to set up logging.
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +61,8 @@ pub struct Config {
     pub include_text: bool,
     /// Also write to stderr: on when it's a terminal, as with `scripts/dev.sh`.
     pub echo_stderr: bool,
+    /// The app, its version and the system, for the top of crash reports.
+    pub app: String,
 }
 
 impl Config {
@@ -62,6 +79,7 @@ impl Config {
                 .unwrap_or(LevelFilter::Info),
             include_text: std::env::var("WINGMAN_LOG_TEXT").is_ok_and(|v| v == "1"),
             echo_stderr: io::stderr().is_terminal(),
+            app: String::new(),
         }
     }
 }
@@ -111,6 +129,7 @@ pub fn init(config: Config) -> io::Result<()> {
     };
     log::set_boxed_logger(Box::new(logger)).map_err(io::Error::other)?;
     log::set_max_level(config.level);
+    let _ = APP.set(config.app);
     let _ = PATH.set(config.path);
     Ok(())
 }
@@ -197,8 +216,23 @@ pub fn fingerprint(text: &str) -> u32 {
     })
 }
 
-/// Logs panics, with where they happened and a backtrace, before the
-/// default handler runs.
+/// The app description given to [`init`].
+pub fn app() -> &'static str {
+    APP.get().map_or("", String::as_str)
+}
+
+/// The last few hundred lines logged, oldest first, already scrubbed.
+pub fn recent_lines() -> Vec<String> {
+    RECENT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .cloned()
+        .collect()
+}
+
+/// Logs panics, with where they happened and a backtrace, and writes a
+/// crash report, before the default handler runs.
 pub fn install_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -217,8 +251,8 @@ pub fn install_panic_hook() {
             .unwrap_or("unnamed")
             .to_string();
         log::error!(
-            target: "panic",
-            "thread '{thread}' panicked at {location}: {message}\n{}",
+            target: crash::TARGET,
+            "md-wingman panicked in thread '{thread}' at {location}: {message}\n\nStack trace:\n{}",
             std::backtrace::Backtrace::force_capture()
         );
         log::logger().flush();
@@ -289,9 +323,32 @@ impl log::Log for FileLogger {
             record.target(),
             &record.args().to_string(),
         );
-        let line = scrub(&line);
+        let mut line = scrub(&line);
+        if record.target() == crash::TARGET {
+            // The report has the crash and the lines before it.
+            let message = scrub(&record.args().to_string());
+            let note = match crash::write_report(&message) {
+                Ok(path) => format!(
+                    "    crash report: {}
+",
+                    path.display()
+                ),
+                Err(e) => format!(
+                    "    couldn't write a crash report: {e}
+"
+                ),
+            };
+            line.push_str(&note);
+        }
         if self.echo_stderr {
             let _ = io::stderr().write_all(line.as_bytes());
+        }
+        {
+            let mut recent = RECENT.lock().unwrap_or_else(|e| e.into_inner());
+            if recent.len() == RECENT_LINES {
+                recent.pop_front();
+            }
+            recent.push_back(line.trim_end().to_string());
         }
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.written + line.len() as u64 > MAX_BYTES {
@@ -320,18 +377,31 @@ fn open(path: &Path) -> io::Result<File> {
     OpenOptions::new().create(true).append(true).open(path)
 }
 
-/// Moves the log aside as `.1` once it's over `MAX_BYTES - headroom`.
+/// Once the log is over `MAX_BYTES - headroom`, moves it aside as `.1`,
+/// shifting older ones along and dropping the oldest.
 fn rotate_if_big(path: &Path, headroom: u64) -> io::Result<()> {
     match fs::metadata(path) {
-        Ok(m) if m.len() + headroom > MAX_BYTES => fs::rename(path, rotated(path)),
+        Ok(m) if m.len() + headroom > MAX_BYTES => {
+            for n in (1..KEEP_ROTATED).rev() {
+                let from = rotated_n(path, n);
+                if from.exists() {
+                    fs::rename(&from, rotated_n(path, n + 1))?;
+                }
+            }
+            fs::rename(path, rotated(path))
+        }
         _ => Ok(()),
     }
 }
 
-/// `md-wingman.log.1`, beside the log.
+/// `md-wingman.log.1`, the newest rotated log, beside the log.
 pub fn rotated(path: &Path) -> PathBuf {
+    rotated_n(path, 1)
+}
+
+fn rotated_n(path: &Path, n: usize) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(".1");
+    name.push(format!(".{n}"));
     path.with_file_name(name)
 }
 
@@ -446,11 +516,16 @@ mod tests {
     fn rotates_a_big_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("md-wingman.log");
-        fs::write(&path, vec![b'x'; MAX_BYTES as usize + 1]).unwrap();
-        rotate_if_big(&path, 0).unwrap();
+        // Five rotations keep only the last three, newest as .1.
+        for n in 1..=5u8 {
+            fs::write(&path, vec![b'0' + n; MAX_BYTES as usize + 1]).unwrap();
+            rotate_if_big(&path, 0).unwrap();
+        }
         assert!(!path.exists());
-        assert!(rotated(&path).exists());
         assert_eq!(rotated(&path).file_name().unwrap(), "md-wingman.log.1");
+        let first = |n| fs::read(rotated_n(&path, n)).unwrap()[0];
+        assert_eq!((first(1), first(2), first(3)), (b'5', b'4', b'3'));
+        assert!(!rotated_n(&path, 4).exists());
         // A small one stays.
         fs::write(&path, "small").unwrap();
         rotate_if_big(&path, 0).unwrap();
@@ -466,6 +541,7 @@ mod tests {
             level: LevelFilter::Info,
             include_text: false,
             echo_stderr: false,
+            app: "md-wingman test".into(),
         })
         .unwrap();
         assert_eq!(super::path(), Some(path.as_path()));
@@ -483,5 +559,19 @@ mod tests {
         log::debug!(target: "test", "now at debug");
         log::logger().flush();
         assert!(fs::read_to_string(&path).unwrap().contains("now at debug"));
+
+        // A crash writes a report with the lines before it.
+        log::error!(target: crash::TARGET, "it broke\n\nStack trace:\n  0: main");
+        let reports = crash::reports_in(&crash::dir_for(&path));
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        let report = fs::read_to_string(&reports[0]).unwrap();
+        assert!(report.contains("md-wingman test"), "{report}");
+        assert!(report.contains("it broke"), "{report}");
+        assert!(report.contains("  0: main"), "{report}");
+        assert!(report.contains("now at debug"), "{report}");
+        assert!(report.contains("hello with [redacted]"), "{report}");
+        // Seen once at the next launch, then not again.
+        assert_eq!(crash::unseen_in(&crash::dir_for(&path), &[]).len(), 1);
+        assert!(crash::unseen_in(&crash::dir_for(&path), &[]).is_empty());
     }
 }

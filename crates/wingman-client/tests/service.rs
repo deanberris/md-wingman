@@ -126,3 +126,52 @@ fn the_services_log_lines_come_back() {
         "{lines:?}"
     );
 }
+
+/// Collects log records, to see what the client reports.
+struct Capture(std::sync::Mutex<Vec<(String, String)>>);
+
+impl log::Log for Capture {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        true
+    }
+    fn log(&self, record: &log::Record) {
+        self.0
+            .lock()
+            .unwrap()
+            .push((record.target().to_string(), record.args().to_string()));
+    }
+    fn flush(&self) {}
+}
+
+static CAPTURE: Capture = Capture(std::sync::Mutex::new(Vec::new()));
+
+#[test]
+fn a_service_that_dies_is_reported_as_a_crash() {
+    let _ = log::set_logger(&CAPTURE);
+    log::set_max_level(log::LevelFilter::Info);
+    let Some(service) = fake_service() else {
+        return;
+    };
+    service.connect().unwrap().hello().unwrap();
+    Command::new("kill")
+        .args(["-9", &service.pid().to_string()])
+        .status()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let crash = loop {
+        let crash = CAPTURE
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(target, _)| target == "crash")
+            .map(|(_, m)| m.clone());
+        if crash.is_some() || std::time::Instant::now() > deadline {
+            break crash;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    let crash = crash.expect("a crash record");
+    assert!(crash.contains("stopped unexpectedly"), "{crash}");
+    assert!(crash.contains("listening on"), "{crash}");
+}

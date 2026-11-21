@@ -67,7 +67,7 @@ function shutdown(reason = "asked to") {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("uncaughtException", (err) => {
-  log.error(`uncaught: ${err.stack ?? err}`);
+  log.fatal(`wingman-service crashed: ${err.stack ?? err}`);
   process.exit(1);
 });
 process.on("unhandledRejection", (err) => log.error(`unhandled rejection: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`));

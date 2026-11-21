@@ -1,18 +1,23 @@
-//! Setting up the log file, and the Help menu's Show Log File and Verbose
-//! Logging. See the `wingman-log` crate for where the file is and what is
-//! kept out of it.
+//! Setting up the log file and crash reports, and the Help menu's Report a
+//! Problem, Show Log File, Show Crash Reports and Verbose Logging. See the
+//! `wingman-log` crate for where the files are and what is kept out of them.
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use gpui_kit::*;
 use wingman_log::LevelFilter;
 
 use crate::settings::Settings;
 use crate::workspace::Workspace;
-use crate::{ShowLogFile, ToggleVerboseLogging};
+use crate::{ReportProblem, ShowCrashReports, ShowLogFile, ToggleVerboseLogging};
 
 /// `WINGMAN_LOG` was set, so it decides the level, not the settings.
 static LEVEL_FROM_ENV: AtomicBool = AtomicBool::new(false);
+
+/// Crash reports from earlier runs, found at launch, for the status bar.
+static UNSEEN_CRASHES: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
 /// Settings that change how the app behaves, logged at startup. Their
 /// values are safe to log; secrets are only said to be set or not.
@@ -35,7 +40,8 @@ const SECRET_ENV_VARS: [&str; 3] = [
 
 /// Opens the log file and notes what the app is running on. Call first.
 pub fn init() {
-    let config = wingman_log::Config::from_env();
+    let mut config = wingman_log::Config::from_env();
+    config.app = app_description();
     LEVEL_FROM_ENV.store(std::env::var_os("WINGMAN_LOG").is_some(), Ordering::Relaxed);
     let path = config.path.clone();
     if let Err(e) = wingman_log::init(config) {
@@ -74,6 +80,95 @@ pub fn init() {
     if let Ok(exe) = std::env::current_exe() {
         log::debug!("executable: {}", exe.display());
     }
+
+    let crashes = wingman_log::crash::unseen();
+    for report in &crashes {
+        log::warn!("crash report from an earlier run: {}", report.display());
+    }
+    *UNSEEN_CRASHES.lock().unwrap_or_else(|e| e.into_inner()) = crashes;
+}
+
+/// "md-wingman 0.1.0 on macos 15.1 (aarch64)", for crash reports and issues.
+fn app_description() -> String {
+    format!(
+        "md-wingman {} on {} {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        os_version(),
+        std::env::consts::ARCH
+    )
+}
+
+/// A note for the status bar if md-wingman crashed since it last ran.
+pub fn take_crash_notice() -> Option<String> {
+    let crashes = std::mem::take(&mut *UNSEEN_CRASHES.lock().unwrap_or_else(|e| e.into_inner()));
+    match crashes.len() {
+        0 => None,
+        1 => Some(
+            "md-wingman crashed last time. Help ▸ Report a Problem… to send the crash report"
+                .into(),
+        ),
+        n => Some(format!(
+            "md-wingman crashed {n} times since it last ran. Help ▸ Report a Problem… to send the crash reports"
+        )),
+    }
+}
+
+/// Shows `path` in Finder (selected), or opens it on other systems.
+fn reveal(path: &Path) -> std::io::Result<()> {
+    let mut command = if cfg!(target_os = "macos") {
+        let mut c = std::process::Command::new("open");
+        c.arg("-R");
+        c
+    } else {
+        std::process::Command::new("xdg-open")
+    };
+    command.arg(path).spawn().map(drop)
+}
+
+/// The newest crash report, if there is one.
+fn latest_crash_report() -> Option<PathBuf> {
+    wingman_log::crash::dir()
+        .map(|d| wingman_log::crash::reports_in(&d))
+        .and_then(|mut r| r.pop())
+}
+
+/// A new-issue link with the version and system filled in. The log itself
+/// is never put in the link: the writer attaches it, after a look.
+pub fn report_url(app: &str, log: Option<&Path>, crash: Option<&Path>) -> String {
+    let mut body = format!(
+        "**What happened**\n\n\n\n**What you expected**\n\n\n\n**Steps to reproduce**\n\n1. \n\n---\n{app}\n"
+    );
+    if let Some(log) = log {
+        body.push_str(&format!(
+            "\nPlease attach the log (Help ▸ Show Log File): `{}`\n",
+            log.display()
+        ));
+    }
+    if let Some(crash) = crash {
+        body.push_str(&format!(
+            "\nAnd the latest crash report (Help ▸ Show Crash Reports): `{}`\n",
+            crash.display()
+        ));
+    }
+    format!(
+        "{}?title={}&body={}",
+        wingman_log::crash::ISSUES_URL,
+        percent_encode(if crash.is_some() { "Crash: " } else { "" }),
+        percent_encode(&body)
+    )
+}
+
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 /// The macOS version, such as "15.1", or "" elsewhere.
@@ -130,20 +225,53 @@ impl Workspace {
         };
         log::logger().flush();
         // Reveal it in Finder, so it can be attached to a bug report.
-        let opened = if cfg!(target_os = "macos") {
-            std::process::Command::new("open")
-                .arg("-R")
-                .arg(path)
-                .spawn()
-        } else {
-            std::process::Command::new("xdg-open")
-                .arg(path.parent().unwrap_or(path))
-                .spawn()
-        };
-        match opened {
+        match reveal(path) {
             Ok(_) => self.set_notice(format!("Log file: {}", path.display()), cx),
             Err(e) => self.set_notice(format!("Log file: {} ({e})", path.display()), cx),
         }
+    }
+
+    pub(crate) fn on_show_crash_reports(
+        &mut self,
+        _: &ShowCrashReports,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(latest) = latest_crash_report() else {
+            self.set_notice("No crash reports: md-wingman hasn't crashed", cx);
+            return;
+        };
+        match reveal(&latest) {
+            Ok(()) => self.set_notice(
+                format!(
+                    "Crash reports: {}",
+                    latest.parent().unwrap_or(&latest).display()
+                ),
+                cx,
+            ),
+            Err(e) => self.set_notice(format!("Crash report: {} ({e})", latest.display()), cx),
+        }
+    }
+
+    pub(crate) fn on_report_problem(
+        &mut self,
+        _: &ReportProblem,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        log::logger().flush();
+        let crash = latest_crash_report();
+        let url = report_url(wingman_log::app(), wingman_log::path(), crash.as_deref());
+        log::info!("opening a new issue on GitHub");
+        cx.open_url(&url);
+        // Show what to attach, so it's at hand.
+        if let Some(path) = crash.as_deref().or(wingman_log::path()) {
+            let _ = reveal(path);
+        }
+        self.set_notice(
+            "Opened a new issue on GitHub. Attach the log file shown in Finder",
+            cx,
+        );
     }
 
     pub(crate) fn on_toggle_verbose_logging(
@@ -167,5 +295,35 @@ impl Workspace {
             "Verbose logging off".to_string()
         };
         self.set_notice(notice, cx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::report_url;
+    use std::path::Path;
+
+    #[test]
+    fn report_links_carry_the_version_and_where_the_files_are() {
+        let url = report_url(
+            "md-wingman 0.1.0 on macos 15.1 (aarch64)",
+            Some(Path::new(
+                "/Users/me/Library/Logs/md-wingman/md-wingman.log",
+            )),
+            Some(Path::new(
+                "/Users/me/Library/Logs/md-wingman/crashes/crash-1.txt",
+            )),
+        );
+        assert!(url.starts_with(
+            "https://github.com/deanberris/md-wingman/issues/new?title=Crash%3A%20&body="
+        ));
+        assert!(
+            url.contains("md-wingman%200.1.0%20on%20macos%2015.1"),
+            "{url}"
+        );
+        assert!(url.contains("crash-1.txt"), "{url}");
+        assert!(!url.contains(' ') && !url.contains('\n'), "{url}");
+        let plain = report_url("md-wingman 0.1.0", None, None);
+        assert!(plain.contains("?title=&body="), "{plain}");
     }
 }

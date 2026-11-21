@@ -56,6 +56,8 @@ actions!(
         DecreaseFontSize,
         ResetFontSize,
         ShowLogFile,
+        ShowCrashReports,
+        ReportProblem,
         ToggleVerboseLogging,
         About,
         CloseAbout,
@@ -158,7 +160,10 @@ fn main() {
                     MenuItem::action("Setup…", ShowSetup),
                 ]),
                 Menu::new("Help").items([
+                    MenuItem::action("Report a Problem…", ReportProblem),
+                    MenuItem::separator(),
                     MenuItem::action("Show Log File", ShowLogFile),
+                    MenuItem::action("Show Crash Reports", ShowCrashReports),
                     MenuItem::action("Verbose Logging", ToggleVerboseLogging),
                 ]),
             ]);

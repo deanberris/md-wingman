@@ -8,7 +8,10 @@
 //! It logs through the `log` crate, under the `wingman_client` target. The
 //! service's own log lines (its stderr) are forwarded under the `service`
 //! target at the level the service gave them, so whatever logger the app
-//! sets up gets one story from both processes.
+//! sets up gets one story from both processes. A crash in the service (a
+//! `FATAL` line with its stack trace, or the process ending while it should
+//! be running) is logged under the `crash` target, which md-wingman's logger
+//! writes up as a crash report.
 //!
 //! ```no_run
 //! use std::process::Command;
@@ -34,7 +37,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -58,12 +61,22 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
 /// start.
 const KEPT_LINES: usize = 20;
 
+/// The log target for crashes (see `wingman_log::crash::TARGET`).
+const CRASH_TARGET: &str = "crash";
+
+/// Where the service is in its life, so its end can be told apart from a crash.
+const STARTING: u8 = 0;
+const RUNNING: u8 = 1;
+const STOPPING: u8 = 2;
+
 /// A running service process. Dropping it stops the process.
 pub struct Service {
     child: Child,
     socket_path: PathBuf,
     /// The service's last few stderr lines.
     recent: Arc<Mutex<Vec<String>>>,
+    /// `STARTING`, `RUNNING` or `STOPPING`.
+    phase: Arc<AtomicU8>,
 }
 
 impl Service {
@@ -97,20 +110,23 @@ impl Service {
             .spawn()
             .inspect_err(|e| log::error!("couldn't start the service: {e}"))?;
         let recent = Arc::new(Mutex::new(Vec::new()));
+        let phase = Arc::new(AtomicU8::new(STARTING));
         if let Some(stderr) = child.stderr.take() {
-            let recent = recent.clone();
+            let (recent, phase) = (recent.clone(), phase.clone());
             thread::Builder::new()
                 .name("wingman-service-log".into())
-                .spawn(move || forward_log(stderr, &recent))?;
+                .spawn(move || forward_log(stderr, &recent, &phase))?;
         }
         log::debug!("service pid {}", child.id());
         let mut service = Service {
             child,
             socket_path,
             recent,
+            phase,
         };
         match service.wait_until_listening() {
             Ok(()) => {
+                service.phase.store(RUNNING, Ordering::SeqCst);
                 log::info!("service listening after {:?}", started.elapsed());
                 Ok(service)
             }
@@ -129,6 +145,11 @@ impl Service {
 
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
+    }
+
+    /// The service process's id.
+    pub fn pid(&self) -> u32 {
+        self.child.id()
     }
 
     /// The service's last few log lines, oldest first.
@@ -170,6 +191,7 @@ impl Drop for Service {
     fn drop(&mut self) {
         // Closing stdin asks the service to exit cleanly; kill it if it hasn't.
         log::info!("stopping the service");
+        self.phase.store(STOPPING, Ordering::SeqCst);
         drop(self.child.stdin.take());
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
@@ -191,37 +213,97 @@ impl Drop for Service {
 }
 
 /// Forwards the service's stderr into the log, line by line, keeping the
-/// last few for error messages.
-fn forward_log(stderr: impl io::Read, recent: &Mutex<Vec<String>>) {
+/// last few for error messages, and reports a crash.
+fn forward_log(stderr: impl io::Read, recent: &Mutex<Vec<String>>, phase: &AtomicU8) {
+    let mut crashed = false;
     for line in BufReader::new(stderr).lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
             continue;
         }
-        let (level, message) = service_line(&line);
-        log::log!(target: "service", level, "{message}");
+        let line = service_line(&line);
+        if line.fatal {
+            crashed = true;
+            log::error!(target: CRASH_TARGET, "{}", line.message);
+        } else {
+            log::log!(target: "service", line.level, "{}", line.message);
+        }
         let mut recent = recent.lock().unwrap_or_else(|e| e.into_inner());
         if recent.len() == KEPT_LINES {
             recent.remove(0);
         }
-        recent.push(message.to_string());
+        recent.push(line.message);
     }
-    log::debug!("service closed its log");
+    // The service's stderr closes when it exits. While it should be running,
+    // that's a crash, even without a FATAL line (killed, out of memory, or
+    // a crash in Bun itself).
+    if phase.load(Ordering::SeqCst) == RUNNING && !crashed {
+        let last = recent.lock().unwrap_or_else(|e| e.into_inner()).join("\n");
+        log::error!(
+            target: CRASH_TARGET,
+            "wingman-service stopped unexpectedly.\n\nIts last log lines:\n{last}"
+        );
+    } else {
+        log::debug!("service closed its log");
+    }
 }
 
-/// Splits a service log line, `"INFO message"`, into its level and message.
-/// Lines without a level (such as a crash's output) are warnings.
-pub fn service_line(line: &str) -> (log::Level, &str) {
+/// One line of the service's log, read back.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ServiceLine {
+    pub level: log::Level,
+    /// A crash, with its stack trace.
+    pub fatal: bool,
+    /// With its newlines put back.
+    pub message: String,
+}
+
+/// Reads a service log line, `"INFO message"`. Lines without a level (such
+/// as Bun's own output) are warnings. The service writes newlines in a
+/// message as `\n` and backslashes as `\\`.
+pub fn service_line(line: &str) -> ServiceLine {
     let (first, rest) = line.split_once(' ').unwrap_or((line, ""));
-    let level = match first {
-        "ERROR" => log::Level::Error,
-        "WARN" => log::Level::Warn,
-        "INFO" => log::Level::Info,
-        "DEBUG" => log::Level::Debug,
-        "TRACE" => log::Level::Trace,
-        _ => return (log::Level::Warn, line),
+    let (level, fatal) = match first {
+        "FATAL" => (log::Level::Error, true),
+        "ERROR" => (log::Level::Error, false),
+        "WARN" => (log::Level::Warn, false),
+        "INFO" => (log::Level::Info, false),
+        "DEBUG" => (log::Level::Debug, false),
+        "TRACE" => (log::Level::Trace, false),
+        _ => {
+            return ServiceLine {
+                level: log::Level::Warn,
+                fatal: false,
+                message: line.to_string(),
+            }
+        }
     };
-    (level, rest.trim_start())
+    ServiceLine {
+        level,
+        fatal,
+        message: unescape(rest.trim_start()),
+    }
+}
+
+fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('\\') => out.push('\\'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 fn default_socket_path() -> PathBuf {
@@ -485,20 +567,46 @@ fn event_summary(event: &Event) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::service_line;
+    use super::{service_line, ServiceLine};
     use log::Level;
+
+    fn line(level: Level, fatal: bool, message: &str) -> ServiceLine {
+        ServiceLine {
+            level,
+            fatal,
+            message: message.into(),
+        }
+    }
 
     #[test]
     fn reads_service_log_levels() {
-        assert_eq!(service_line("INFO listening"), (Level::Info, "listening"));
+        assert_eq!(
+            service_line("INFO listening"),
+            line(Level::Info, false, "listening")
+        );
         assert_eq!(
             service_line("ERROR task r1 failed: boom"),
-            (Level::Error, "task r1 failed: boom")
+            line(Level::Error, false, "task r1 failed: boom")
         );
-        assert_eq!(service_line("DEBUG"), (Level::Debug, ""));
+        assert_eq!(service_line("DEBUG"), line(Level::Debug, false, ""));
         assert_eq!(
             service_line("panic: something broke"),
-            (Level::Warn, "panic: something broke")
+            line(Level::Warn, false, "panic: something broke")
+        );
+    }
+
+    #[test]
+    fn puts_a_stack_trace_back_together() {
+        assert_eq!(
+            service_line(
+                r"FATAL crashed: Error: boom
+    at main (C:\x\main.ts:1:1)"
+            ),
+            line(
+                Level::Error,
+                true,
+                "crashed: Error: boom\n    at main (C:\\x\\main.ts:1:1)"
+            )
         );
     }
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createLogger, fingerprint, parseLevel, scrub } from "./log";
+import { createLogger, fingerprint, oneLine, parseLevel, scrub } from "./log";
 
 test("levels filter lines and lead each one", () => {
   const lines: string[] = [];
@@ -25,6 +25,18 @@ test("document text is described, not logged, by default", () => {
   expect(hidden).toBe(`[17 chars, 3 words, #${fingerprint("Their going home.")}]`);
   const shown = createLogger({ WINGMAN_LOG_TEXT: "1" }, () => {}).text("Their going home.");
   expect(shown).toEndWith(` "Their going home."`);
+});
+
+test("a stack trace stays on one line, and crashes are FATAL", () => {
+  const lines: string[] = [];
+  const log = createLogger({}, (l) => lines.push(l));
+  log.fatal("uncaught: Error: boom\n    at main (main.ts:1:1)");
+  expect(lines).toEqual(["FATAL uncaught: Error: boom\\n    at main (main.ts:1:1)"]);
+  expect(oneLine("C:\\path\nnext")).toBe("C:\\\\path\\nnext");
+  // FATAL always shows, even at the quietest level.
+  const quiet: string[] = [];
+  createLogger({ WINGMAN_LOG: "error" }, (l) => quiet.push(l)).fatal("x");
+  expect(quiet).toEqual(["FATAL x"]);
 });
 
 test("fingerprints match the app's FNV-1a", () => {

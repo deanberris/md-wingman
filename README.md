@@ -205,10 +205,20 @@ md-wingman keeps one log for the app and its assistant service, at
 Show Log File reveals it in Finder, ready to attach to a bug report. It records
 startup, the assistant service starting and stopping, sign-in mode, every check
 (how long it took, how many turns, its cost and tokens, or why it failed), Jev's
-grades against the threshold, and errors. It keeps the last 5 MB, plus the one
-before as `md-wingman.log.1`.
+grades against the threshold, and errors. It rotates by itself at 5 MB and
+keeps the three before it as `md-wingman.log.1` (newest) to `.3`.
 
-The log never holds the TypeSafe key, API keys or sign-in tokens, and it leaves
+If md-wingman crashes (a panic in the app, or the assistant service crashing
+or stopping unexpectedly), it writes a crash report to
+`~/Library/Logs/md-wingman/crashes/`, with the stack trace and the log lines
+before it, and keeps the last ten. The next launch says so in the status bar,
+without interrupting. Help ▸ Report a Problem… opens a new GitHub issue with the
+version and system filled in, and shows the files to attach. Help ▸ Show Crash
+Reports finds them later. Crashes a panic can't catch, such as a segfault, end up
+in macOS's own reports (`~/Library/Logs/DiagnosticReports`), and the next launch
+mentions those too.
+
+The log and crash reports never hold the TypeSafe key, API keys or sign-in tokens, and they leave
 out your writing: a passage appears only as its length and a short fingerprint.
 
 - Help ▸ Verbose Logging (or `"verbose_logging": true`) adds debug detail, such as each tool Claude uses and each grade Jev skips.
