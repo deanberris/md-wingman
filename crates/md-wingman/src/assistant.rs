@@ -14,15 +14,25 @@ pub enum ServiceStatus {
     Failed(String),
 }
 
-/// A running service and a connection to it. Dropping it stops the service.
+/// Something that runs assistant tasks: the real service, or a fake in tests.
+pub trait Backend: Send {
+    /// Starts a task and returns its events as an async stream for the UI,
+    /// with a way to cancel it.
+    fn run(&self, task: TaskKind, text: &str, context: Option<&str>)
+        -> Result<RunningTask, String>;
+}
+
+/// A connection to the assistant, and what it said about itself.
 pub struct Assistant {
-    // Keep the service alive for as long as the client is used.
-    _service: Service,
-    client: Client,
+    backend: Box<dyn Backend>,
     pub info: ServiceInfo,
 }
 
 impl Assistant {
+    pub fn new(backend: Box<dyn Backend>, info: ServiceInfo) -> Self {
+        Assistant { backend, info }
+    }
+
     /// Starts the service and does the handshake. Blocks for up to a few
     /// seconds, so call it off the UI thread.
     pub fn start(auth: AuthMode) -> Result<Assistant, String> {
@@ -37,16 +47,36 @@ impl Assistant {
             .connect()
             .map_err(|e| format!("Couldn't connect to the service: {e}"))?;
         let info = client.hello().map_err(|e| e.to_string())?;
-        Ok(Assistant {
-            _service: service,
-            client,
+        Ok(Assistant::new(
+            Box::new(ServiceBackend {
+                _service: service,
+                client,
+            }),
             info,
-        })
+        ))
     }
 
     /// Starts a task and returns its events as an async stream for the UI.
-    /// Returns the task id too, for cancelling.
     pub fn run(
+        &self,
+        task: TaskKind,
+        text: &str,
+        context: Option<&str>,
+    ) -> Result<RunningTask, String> {
+        self.backend.run(task, text, context)
+    }
+}
+
+/// The real backend: a running service and a connection to it. Dropping it
+/// stops the service.
+struct ServiceBackend {
+    // Keep the service alive for as long as the client is used.
+    _service: Service,
+    client: Client,
+}
+
+impl Backend for ServiceBackend {
+    fn run(
         &self,
         task: TaskKind,
         text: &str,

@@ -7,7 +7,6 @@ use gpui_kit::component::Theme;
 use gpui_kit::component::{h_flex, v_flex, Sizable as _};
 use gpui_kit::*;
 
-use crate::jev;
 use crate::workspace::Workspace;
 use crate::{SetJevKey, ToggleJevPrefilter};
 
@@ -32,7 +31,7 @@ impl Workspace {
         // References join the checks; what's already written counts as done.
         self.continuous_baseline(cx);
         if on {
-            if self.continuous.has_key() {
+            if self.continuous.has_key(&*self.grader) {
                 self.set_notice(
                     format!(
                         "Jev pre-filter on: acting on grades above {:.0}%",
@@ -78,7 +77,7 @@ impl Workspace {
             self.set_notice("Paste a TypeSafe API key first", cx);
             return;
         }
-        match jev::store_key(&key) {
+        match self.grader.store_key(&key) {
             Ok(()) => {
                 self.continuous.key_changed(Some(key));
                 self.key_input = None;
@@ -91,7 +90,7 @@ impl Workspace {
     }
 
     fn clear_key(&mut self, cx: &mut Context<Self>) {
-        match jev::clear_key() {
+        match self.grader.clear_key() {
             Ok(()) => {
                 self.continuous.key_changed(None);
                 self.key_input = None;

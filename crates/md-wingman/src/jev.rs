@@ -43,6 +43,34 @@ impl std::fmt::Display for JevError {
     }
 }
 
+/// Grades paragraphs and keeps the TypeSafe key: [`Jev`] for real, or a fake
+/// in tests, so they need neither the network nor the Keychain.
+pub trait Grader: Send + Sync {
+    fn load_key(&self) -> Result<Option<String>, String>;
+    fn store_key(&self, key: &str) -> Result<(), String>;
+    fn clear_key(&self) -> Result<(), String>;
+    /// Blocks, so call it off the main thread.
+    fn grade(&self, key: &str, model: &str, paragraph: &str) -> Result<Grades, JevError>;
+}
+
+/// TypeSafe's Jev, with the key in the macOS Keychain.
+pub struct Jev;
+
+impl Grader for Jev {
+    fn load_key(&self) -> Result<Option<String>, String> {
+        load_key()
+    }
+    fn store_key(&self, key: &str) -> Result<(), String> {
+        store_key(key)
+    }
+    fn clear_key(&self) -> Result<(), String> {
+        clear_key()
+    }
+    fn grade(&self, key: &str, model: &str, paragraph: &str) -> Result<Grades, JevError> {
+        grade(key, model, paragraph)
+    }
+}
+
 /// The three questions, each a rubric from "not at all" to "a lot". Scores
 /// are normalised to 0..1 by level, so a rubric's wording decides which
 /// levels clear the threshold (0.66 by default).

@@ -196,6 +196,30 @@ impl Workspace {
         self.continuous_run_ended(id, run.kind, failure, cx);
     }
 
+    /// Each card's kind and state, top first, such as "done: 2 suggested
+    /// edits" or "failed: Cancelled". Background runs are left out.
+    #[cfg(test)]
+    pub(crate) fn run_cards(&self) -> Vec<(TaskKind, String)> {
+        self.runs
+            .iter()
+            .filter(|r| !r.background)
+            .map(|r| {
+                let state = match &r.state {
+                    RunState::Running(s) => format!("running: {s}"),
+                    RunState::Done => format!("done: {}", r.summary),
+                    RunState::Failed(m) => format!("failed: {m}"),
+                };
+                (r.kind, state)
+            })
+            .collect()
+    }
+
+    /// The ids of the runs, top first, for element ids such as `close`.
+    #[cfg(test)]
+    pub(crate) fn run_ids(&self) -> Vec<usize> {
+        self.runs.iter().map(|r| r.id).collect()
+    }
+
     fn run_mut(&mut self, id: usize) -> Option<&mut TaskRun> {
         self.runs.iter_mut().find(|r| r.id == id)
     }

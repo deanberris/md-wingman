@@ -1,11 +1,11 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKMessage, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import { claudeEnv, type AuthMode } from "./auth";
 import { resolveClaudePath } from "./claudePath";
 import type { TaskKind } from "./protocol";
-import { TASKS, buildPrompt } from "./tasks";
+import { TASKS, buildPrompt, type TaskSpec } from "./tasks";
 
 export interface RunInput {
   task: TaskKind;
@@ -36,15 +36,19 @@ function workDir(): string {
  * The real runner: drives Claude through the Agent SDK, which runs the user's
  * Claude Code. `auth` decides which credential Claude Code may see (see auth.ts).
  */
-export const makeAgentRunner = (auth: AuthMode): Runner => {
+export const makeAgentRunner = (auth: AuthMode, sdk: { query: QueryFn } = { query }): Runner => {
   // Built once, so a bad configuration fails at startup rather than per task.
   const env = { ...claudeEnv(auth), CLAUDE_AGENT_SDK_CLIENT_APP: "md-wingman/0.1.0" };
-  return (input) => runAgent(input, env);
+  return (input) => runAgent(input, env, sdk.query);
 };
+
+/** The Agent SDK's `query`. Tests pass a scripted one to `makeAgentRunner`. */
+export type QueryFn = (args: Parameters<typeof query>[0]) => AsyncIterable<SDKMessage>;
 
 async function runAgent(
   { task, text, context, signal, onDelta, onStatus }: RunInput,
   env: Record<string, string | undefined>,
+  query: QueryFn,
 ): Promise<RunResult> {
   const spec = TASKS[task];
   const abortController = new AbortController();
@@ -89,13 +93,7 @@ async function runAgent(
           onStatus(ev.content_block.name === "StructuredOutput" ? "Writing up" : `Using ${ev.content_block.name}`);
         }
       } else if (msg.type === "result") {
-        if (msg.subtype !== "success") throw new Error(`Claude stopped early (${msg.subtype})`);
-        if (spec.schema) {
-          if (msg.structured_output === undefined) throw new Error("Claude didn't return a structured reply");
-          const data = msg.structured_output as { summary?: unknown };
-          return { text: typeof data.summary === "string" ? data.summary : "", data };
-        }
-        return { text: msg.result || streamed };
+        return taskResult(msg, spec, streamed);
       }
     }
     if (signal.aborted) throw new Error("cancelled");
@@ -103,6 +101,29 @@ async function runAgent(
   } finally {
     signal.removeEventListener("abort", onAbort);
   }
+}
+
+/**
+ * Turns the SDK's result message into the task's reply, or throws with a
+ * message the writer can act on.
+ *
+ * A turn that ends on an API error (for example "Not logged in · Please run
+ * /login") still has subtype "success", but with `is_error` set and the error
+ * text in `result`, so check that before looking for the structured reply.
+ */
+export function taskResult(
+  msg: Pick<SDKResultMessage, "subtype" | "is_error"> & { result?: string; structured_output?: unknown },
+  spec: Pick<TaskSpec, "schema">,
+  streamed = "",
+): RunResult {
+  if (msg.subtype !== "success") throw new Error(`Claude stopped early (${msg.subtype})`);
+  if (msg.is_error) throw new Error(msg.result?.trim() || "Claude returned an error");
+  if (spec.schema) {
+    if (msg.structured_output === undefined) throw new Error("Claude didn't return a structured reply");
+    const data = msg.structured_output as { summary?: unknown };
+    return { text: typeof data.summary === "string" ? data.summary : "", data };
+  }
+  return { text: msg.result || streamed };
 }
 
 /**
