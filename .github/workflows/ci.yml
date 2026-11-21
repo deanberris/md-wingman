@@ -1,0 +1,67 @@
+# Build and test md-wingman on an Apple Silicon Mac for every pull request
+# and every push to main. Nothing here signs in to Claude or Jev: the Rust
+# tests and the service tests run without network credentials.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  app:
+    name: App (macOS, Rust)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rustup is preinstalled; it reads rust-toolchain.toml and installs
+      # the pinned toolchain (with rustfmt and clippy) on first use.
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Build release app
+        run: cargo build --release -p md-wingman --locked
+
+  service:
+    name: Assistant service (macOS, Bun)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
+      - name: Build service binary
+        run: bun run build
