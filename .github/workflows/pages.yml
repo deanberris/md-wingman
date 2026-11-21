@@ -1,6 +1,7 @@
 # Publish the project website in site/ to GitHub Pages
-# (https://deanberris.github.io/md-wingman/) on every push to main that
-# changes it. Needs Settings ▸ Pages ▸ Source set to "GitHub Actions".
+# (https://md-wingman.dev/) on every push to main that
+# changes it. Needs Settings ▸ Pages ▸ Source set to "GitHub Actions", and the
+# custom domain md-wingman.dev set there too (Actions deploys ignore a CNAME file).
 name: Website
 
 on:

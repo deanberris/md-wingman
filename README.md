@@ -3,7 +3,7 @@
 A native macOS Markdown editor with Claude always on hand in a sidebar, to
 fact-check what you write, find references for it, and suggest copy edits.
 
-Website: [deanberris.github.io/md-wingman](https://deanberris.github.io/md-wingman/)
+Website: [md-wingman.dev](https://md-wingman.dev/)
 
 > **Status: early development.** The editor and all three assistant features
 > work, but the app has seen little use on macOS yet, so expect rough edges.
@@ -271,7 +271,7 @@ on macOS for every pull request.
 - `crates/wingman-client`: Rust client for the assistant service
 - `crates/wingman-log`: the log file: levels, rotation, keeping secrets and writing out of it
 - `service/`: the assistant service, in TypeScript on the Claude Agent SDK
-- `site/`: the [project website](https://deanberris.github.io/md-wingman/), published to GitHub Pages by `.github/workflows/pages.yml`
+- `site/`: the [project website](https://md-wingman.dev/), published to GitHub Pages by `.github/workflows/pages.yml`
 - `docs/`: [architecture](docs/architecture.md) and the [UI toolkit choice](docs/toolkit-choice.md)
 
 ## Roadmap
