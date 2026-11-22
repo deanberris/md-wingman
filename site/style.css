@@ -92,3 +92,26 @@ footer.wrap {
   color: var(--muted);
 }
 footer p { padding-top: 1rem; }
+
+/* Product imagery: wider than the text column, framed like a window. */
+.hero { max-width: 64rem; margin: 3rem auto 0; padding: 0 1rem; }
+figure { margin: 0; }
+.hero img, .media img, .media video {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--code-bg);
+  box-shadow: 0 12px 40px -18px rgb(0 0 0 / 0.35);
+}
+figcaption { font: 0.75rem var(--mono); color: var(--muted); margin-top: 0.6rem; text-align: center; }
+.media { margin: 1.25rem -4rem 0; }
+.media.narrow { margin: 1.25rem 0; }
+@media (max-width: 52rem) { .media { margin-left: 0; margin-right: 0; } }
+
+.step { margin-top: 2.75rem; }
+.step:first-of-type { margin-top: 0; }
+h3 { font: 600 1.05rem var(--mono); margin: 0 0 0.5rem; }
+h3 .n { color: var(--muted); font-weight: 400; margin-right: 0.5rem; }
+.sig { font: 0.85rem var(--mono); color: var(--muted); }
