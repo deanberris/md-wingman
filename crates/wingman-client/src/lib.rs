@@ -52,6 +52,9 @@ pub struct ServiceInfo {
     pub version: String,
     /// The credential the service is using, so the UI can show it.
     pub auth: AuthMode,
+    /// In provider mode: the provider's name and the model in use.
+    pub provider: Option<String>,
+    pub model: Option<String>,
 }
 
 /// How long [`Service::spawn`] waits for the service to start listening.
@@ -391,7 +394,14 @@ impl Client {
                 protocol,
                 version,
                 auth,
-            } if protocol == PROTOCOL_VERSION => Ok(ServiceInfo { version, auth }),
+                provider,
+                model,
+            } if protocol == PROTOCOL_VERSION => Ok(ServiceInfo {
+                version,
+                auth,
+                provider,
+                model,
+            }),
             Event::Hello { protocol, .. } => Err(io::Error::other(format!(
                 "service speaks protocol {protocol}, this app speaks {PROTOCOL_VERSION}"
             ))),

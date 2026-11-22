@@ -5,9 +5,10 @@
 // The app starts this process and stops it when it quits. Logs go to stderr
 // as "LEVEL message" lines, which the app writes to its log file (see log.ts).
 // Set WINGMAN_FAKE=1 to answer with canned replies instead of calling Claude.
-// WINGMAN_AUTH picks the sign-in mode: subscription (default) or api_key.
+// WINGMAN_AUTH picks the sign-in mode: subscription (default), api_key, or
+// provider for another Anthropic-compatible endpoint (see auth.ts).
 
-import { type AuthMode, authModeFromEnv } from "./auth";
+import { type AuthMode, authModeFromEnv, type Provider, providerFromEnv } from "./auth";
 import { resolveClaudePath } from "./claudePath";
 import { log } from "./log";
 import { fakeRunner, makeAgentRunner, type Runner } from "./runner";
@@ -32,15 +33,22 @@ if (fake) log.warn("WINGMAN_FAKE=1: using canned replies, not Claude");
 if (process.env.WINGMAN_MODEL) log.info(`model: ${process.env.WINGMAN_MODEL}`);
 
 let auth: AuthMode;
+let provider: Provider | undefined;
 let runner: Runner;
 try {
   auth = authModeFromEnv();
-  runner = fake ? fakeRunner : makeAgentRunner(auth);
+  if (auth === "provider") provider = providerFromEnv();
+  runner = fake ? fakeRunner : makeAgentRunner(auth, undefined, log, provider);
 } catch (err) {
   log.error(err instanceof Error ? err.message : String(err));
   process.exit(2);
 }
 log.info(`sign-in mode: ${auth}`);
+if (provider) {
+  log.info(
+    `model provider: ${provider.name} at ${provider.baseUrl}, model ${provider.model}, fast model ${provider.fastModel ?? provider.model}, ${provider.token ? "with" : "without"} a token, web search ${provider.webSearch ? "on" : "off"}`,
+  );
+}
 if (!fake) {
   try {
     log.info(`Claude Code: ${resolveClaudePath() ?? "the Agent SDK's bundled copy"}`);
@@ -54,6 +62,7 @@ const server = startServer({
   socketPath,
   runner,
   auth,
+  provider: provider && { name: provider.name, model: provider.model },
   log,
   onShutdown: () => shutdown("the app asked"),
 });

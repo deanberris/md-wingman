@@ -14,6 +14,7 @@ mod guide;
 mod jev;
 mod logging;
 mod prefilter;
+mod provider;
 mod quit;
 mod reflow;
 mod review;
@@ -63,6 +64,7 @@ actions!(
         ToggleContinuous,
         ToggleJevPrefilter,
         SetJevKey,
+        ModelProvider,
         ShowSetup,
         ToggleDarkMode,
         AppearanceAndFonts,
@@ -178,6 +180,7 @@ fn main() {
                     MenuItem::action("Jev Pre-filter", ToggleJevPrefilter),
                     MenuItem::action("Set TypeSafe API Key…", SetJevKey),
                     MenuItem::separator(),
+                    MenuItem::action("Model Provider…", ModelProvider),
                     MenuItem::action("Setup…", ShowSetup),
                 ]),
                 Menu::new("Help").items([

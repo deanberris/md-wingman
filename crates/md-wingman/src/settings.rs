@@ -46,6 +46,9 @@ pub struct Settings {
     /// The setup wizard was finished with Claude Code signed in, so it
     /// doesn't open at launch any more. Assistant ▸ Setup… reopens it.
     pub setup_done: bool,
+    /// Another model provider to use instead of Claude, such as OpenRouter
+    /// or Ollama. Its token is kept in the Keychain.
+    pub provider: crate::provider::ProviderSettings,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,6 +79,7 @@ impl Default for Settings {
             preview_font: None,
             verbose_logging: false,
             setup_done: false,
+            provider: Default::default(),
         }
     }
 }

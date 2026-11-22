@@ -10,8 +10,10 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Provider } from "./auth";
+import { silent } from "./log";
 import type { Event, TaskKind } from "./protocol";
-import { fakeRunner, makeAgentRunner, NOT_SIGNED_IN, type QueryFn } from "./runner";
+import { fakeRunner, makeAgentRunner, NO_WEB_SEARCH, NOT_SIGNED_IN, PROVIDER_REFUSED, type QueryFn } from "./runner";
 import { startServer } from "./server";
 import { TASKS } from "./tasks";
 
@@ -124,9 +126,18 @@ const result = (fields: Record<string, unknown>) => ({
 });
 
 /** Runs one task through a server on `query` and returns its events. */
-async function runTask(query: QueryFn, kind: TaskKind, text: string, context?: string): Promise<Event[]> {
+async function runTask(
+  query: QueryFn,
+  kind: TaskKind,
+  text: string,
+  context?: string,
+  provider?: Provider,
+): Promise<Event[]> {
   const socketPath = join(tmpdir(), `wingman-contract-${process.pid}-${Math.random().toString(36).slice(2)}.sock`);
-  stop = startServer({ socketPath, runner: makeAgentRunner("subscription", { query }) }).stop;
+  const runner = provider
+    ? makeAgentRunner("provider", { query }, silent, provider)
+    : makeAgentRunner("subscription", { query });
+  stop = startServer({ socketPath, runner }).stop;
   const events: Event[] = [];
   let buf = "";
   let finished!: () => void;
@@ -232,4 +243,45 @@ test("status counts the sources read so far", async () => {
     "Reading source 2",
     "Writing up · 2 sources read",
   ]);
+});
+
+const localModel: Provider = {
+  name: "Ollama",
+  baseUrl: "http://localhost:11434",
+  model: "qwen3",
+  webSearch: false,
+};
+
+test("with a provider, tasks use its model and its endpoint", async () => {
+  const { passage, data } = fixture("fact_check");
+  const sdk = scripted([result({ structured_output: data })]);
+  await runTask(sdk.query, "fact_check", passage, undefined, { ...localModel, webSearch: true, token: "tok" });
+  const options = sdk.calls[0]!.options!;
+  expect(options.model).toBe("qwen3");
+  expect(options.env?.ANTHROPIC_BASE_URL).toBe("http://localhost:11434");
+  expect(options.env?.ANTHROPIC_AUTH_TOKEN).toBe("tok");
+  expect(options.tools).toEqual(["WebSearch", "WebFetch"]);
+  expect(options.systemPrompt).not.toContain(NO_WEB_SEARCH);
+});
+
+test("a provider without web search gets no WebSearch tool, and is told so", async () => {
+  const { passage, data } = fixture("find_references");
+  const sdk = scripted([result({ structured_output: data })]);
+  await runTask(sdk.query, "find_references", passage, undefined, localModel);
+  const options = sdk.calls[0]!.options!;
+  expect(options.tools).toEqual(["WebFetch"]);
+  expect(options.allowedTools).toEqual(["WebFetch"]);
+  expect(options.systemPrompt).toContain(NO_WEB_SEARCH);
+
+  // Copy-edits never searched, so they're unchanged.
+  const copy = fixture("copy_edit");
+  const sdk2 = scripted([result({ structured_output: copy.data })]);
+  await runTask(sdk2.query, "copy_edit", copy.passage, undefined, localModel);
+  expect(sdk2.calls[0]!.options!.systemPrompt).toBe(TASKS.copy_edit.systemPrompt);
+});
+
+test("a provider that refuses the token says to check it, not to sign in to Claude", async () => {
+  const sdk = scripted([result({ is_error: true, result: "Not logged in · Please run /login" })]);
+  const events = await runTask(sdk.query, "copy_edit", "teh cat", undefined, localModel);
+  expect(events.at(-1)).toEqual({ id: "t", type: "error", message: PROVIDER_REFUSED });
 });

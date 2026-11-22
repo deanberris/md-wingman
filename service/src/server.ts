@@ -18,12 +18,21 @@ export interface ServerOptions {
   runner: Runner;
   /** Reported to clients in the hello reply. */
   auth?: AuthMode;
+  /** Reported in the hello reply in "provider" mode. */
+  provider?: { name: string; model: string };
   log?: Logger;
   /** Called when a client asks the service to shut down. */
   onShutdown?: () => void;
 }
 
-export function startServer({ socketPath, runner, auth = "subscription", log = silent, onShutdown }: ServerOptions) {
+export function startServer({
+  socketPath,
+  runner,
+  auth = "subscription",
+  provider,
+  log = silent,
+  onShutdown,
+}: ServerOptions) {
   let connections = 0;
   // A stale socket file from a crashed run would make listen() fail.
   if (existsSync(socketPath)) unlinkSync(socketPath);
@@ -36,7 +45,14 @@ export function startServer({ socketPath, runner, auth = "subscription", log = s
     switch (req.type) {
       case "hello":
         log.debug(`conn ${sock.data.conn}: hello`);
-        send(sock, { id: req.id, type: "hello", protocol: PROTOCOL_VERSION, version: SERVICE_VERSION, auth });
+        send(sock, {
+          id: req.id,
+          type: "hello",
+          protocol: PROTOCOL_VERSION,
+          version: SERVICE_VERSION,
+          auth,
+          ...(provider && { provider: provider.name, model: provider.model }),
+        });
         return;
       case "cancel": {
         const ac = sock.data.inflight.get(req.target);

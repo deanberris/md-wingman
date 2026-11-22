@@ -220,6 +220,28 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Cancels every run still going, as when the assistant restarts. Each
+    /// ends as if the service had said "cancelled", since a stopped service
+    /// says nothing more.
+    pub(crate) fn cancel_all_runs(&mut self, cx: &mut Context<Self>) {
+        let running: Vec<usize> = self
+            .runs
+            .iter()
+            .filter(|r| r.cancel.is_some())
+            .map(|r| r.id)
+            .collect();
+        for id in running {
+            self.cancel_run(id, cx);
+            self.on_run_event(
+                id,
+                Event::Error {
+                    message: "cancelled".into(),
+                },
+                cx,
+            );
+        }
+    }
+
     /// A background run is done with: its findings join the document's
     /// lists, and continuous mode moves on.
     fn end_background_run(&mut self, id: usize, failure: Option<String>, cx: &mut Context<Self>) {
@@ -494,19 +516,16 @@ impl Workspace {
         let theme = cx.theme().clone();
         let ready = matches!(self.service_status, ServiceStatus::Ready(_));
 
-        let mut list = v_flex().gap_3().p_3();
-        if let Some(panel) = self.render_setup(&theme, cx) {
-            list = list.child(panel);
-        }
-        if let Some(panel) = self.render_guide(&theme, cx) {
-            list = list.child(panel);
-        }
-        if let Some(panel) = self.render_appearance_panel(&theme, cx) {
-            list = list.child(panel);
-        }
-        if let Some(panel) = self.render_key_panel(&theme, cx) {
-            list = list.child(panel);
-        }
+        // The provider panel comes first, so it shows even when opened from
+        // the setup wizard.
+        let mut list = v_flex()
+            .gap_3()
+            .p_3()
+            .children(self.render_provider_panel(&theme, cx))
+            .children(self.render_setup(&theme, cx))
+            .children(self.render_guide(&theme, cx))
+            .children(self.render_appearance_panel(&theme, cx))
+            .children(self.render_key_panel(&theme, cx));
         if self.settings.continuous {
             let jev = self.settings.jev_prefilter;
             list = list.child(

@@ -56,6 +56,12 @@ If they would rather use an Anthropic API key, that is their choice: they
 launch the app with `WINGMAN_AUTH=api_key` and `ANTHROPIC_API_KEY` set. Don't
 put the key anywhere yourself.
 
+If they want a model other than Claude, such as OpenRouter or a local model
+in Ollama or LM Studio, Claude Code doesn't need to be signed in. They set it
+up in the app themselves (Assistant ▸ Model Provider…), which keeps the
+provider's token in their Keychain. You may help them install and start
+Ollama or LM Studio and pull a model, after asking. Don't handle the token.
+
 ### 3. Build, sign and install
 
 From the repository root:

@@ -8,9 +8,9 @@ import { startServer } from "./server";
 let stop: (() => void) | undefined;
 afterEach(() => stop?.());
 
-async function connect(runner: Runner) {
+async function connect(runner: Runner, options: Partial<Parameters<typeof startServer>[0]> = {}) {
   const socketPath = join(tmpdir(), `wingman-test-${process.pid}-${Math.random().toString(36).slice(2)}.sock`);
-  stop = startServer({ socketPath, runner }).stop;
+  stop = startServer({ socketPath, runner, ...options }).stop;
   const events: Event[] = [];
   let buf = "";
   const waiters: Array<() => void> = [];
@@ -40,6 +40,14 @@ test("hello reports the protocol version", async () => {
   c.send({ id: "h", type: "hello" });
   const ev = await c.waitFor((e) => e.id === "h");
   expect(ev).toMatchObject({ type: "hello", protocol: 1, auth: "subscription" });
+  c.close();
+});
+
+test("hello names the model provider and model in provider mode", async () => {
+  const c = await connect(fakeRunner, { auth: "provider", provider: { name: "OpenRouter", model: "z-ai/glm-4.6" } });
+  c.send({ id: "h", type: "hello" });
+  const ev = await c.waitFor((e) => e.id === "h");
+  expect(ev).toMatchObject({ type: "hello", auth: "provider", provider: "OpenRouter", model: "z-ai/glm-4.6" });
   c.close();
 });
 

@@ -1,7 +1,8 @@
 //! The setup wizard: what md-wingman needs before the assistant can help,
 //! with the commands to do it.
 //!
-//! 1. Claude Code, installed and signed in (`claude auth status`).
+//! 1. Claude Code, installed and signed in (`claude auth status`), or
+//!    another model provider for it to use (see provider.rs).
 //! 2. Optionally, a TypeSafe API key for the Jev pre-filter, in the Keychain.
 //!
 //! It opens in the Assistant pane at first launch and from Assistant ▸
@@ -323,8 +324,7 @@ impl Workspace {
         let ready = self
             .setup
             .as_ref()
-            .and_then(|w| w.claude.as_ref())
-            .is_some_and(ClaudeStatus::ready);
+            .is_some_and(|w| self.claude_step_done(w));
         self.setup = None;
         if ready && !self.settings.setup_done {
             self.settings.setup_done = true;
@@ -350,6 +350,42 @@ impl Workspace {
         }
     }
 
+    /// What the assistant uses instead of a Claude sign-in, if anything: an
+    /// API key or a provider from the environment, or the model provider
+    /// from the settings.
+    fn instead_of_claude(&self) -> Option<String> {
+        match auth_mode_from_env() {
+            Some(AuthMode::ApiKey) => Some(
+                "Using an API key (WINGMAN_AUTH=api_key), so Claude Code doesn't need to be signed in."
+                    .into(),
+            ),
+            Some(AuthMode::Provider) => Some(
+                "Using the model provider from WINGMAN_PROVIDER_URL (WINGMAN_AUTH=provider), so \
+                 Claude Code doesn't need to be signed in."
+                    .into(),
+            ),
+            Some(AuthMode::Subscription) => None,
+            None => self.wanted_connection().map(|p| {
+                format!(
+                    "Using {} ({}) through Claude Code, so it doesn't need to be signed in to \
+                     Claude. Change it in Assistant ▸ Model Provider….",
+                    p.display_name(),
+                    p.model
+                )
+            }),
+        }
+    }
+
+    /// Step 1 is done: Claude Code is signed in, or it's installed and uses
+    /// something else instead of a Claude sign-in.
+    fn claude_step_done(&self, wizard: &SetupWizard) -> bool {
+        match &wizard.claude {
+            Some(status) if status.ready() => true,
+            Some(ClaudeStatus::NotInstalled) => false,
+            _ => self.instead_of_claude().is_some(),
+        }
+    }
+
     fn jev_ready(&self) -> bool {
         self.settings.jev_prefilter && matches!(self.continuous.cached_key(), Some(Some(_)))
     }
@@ -357,7 +393,7 @@ impl Workspace {
     pub(crate) fn render_setup(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
         let wizard = self.setup.as_ref()?;
         let can_run = self.probe.can_run_in_terminal();
-        let api_key = auth_mode_from_env() == AuthMode::ApiKey;
+        let instead = self.instead_of_claude();
 
         let heading = |text: &str| {
             div()
@@ -428,13 +464,23 @@ impl Workspace {
             };
 
         // Step 1: Claude Code.
-        let claude_ready = api_key || wizard.claude.as_ref().is_some_and(ClaudeStatus::ready);
+        let claude_ready = self.claude_step_done(wizard);
         let mut claude = v_flex().gap_2();
-        if api_key {
-            claude = claude.child(note(
-                "Using an API key (WINGMAN_AUTH=api_key), so Claude Code doesn't need to be signed in."
-                    .into(),
-            ));
+        let not_installed = matches!(wizard.claude, Some(ClaudeStatus::NotInstalled));
+        if let (Some(instead), false) = (&instead, not_installed) {
+            claude = claude.child(note(instead.clone()));
+        } else if let Some(instead) = instead {
+            // Another model still goes through Claude Code.
+            claude = claude
+                .child(note(format!(
+                    "{instead} Claude Code itself still needs to be installed:"
+                )))
+                .child(command_row(
+                    "install",
+                    INSTALL_COMMAND,
+                    Some(INSTALL_COMMAND.to_string()),
+                    cx,
+                ));
         } else {
             match &wizard.claude {
                 None => claude = claude.child(note("Looking for Claude Code…".into())),
@@ -506,6 +552,25 @@ impl Workspace {
                             "Checks again by itself every few seconds.".into()
                         })),
                 );
+            }
+            if !claude_ready {
+                claude = claude
+                    .child(note(
+                        "Or use another model instead of Claude: OpenRouter, or one running \
+                         on this Mac with Ollama or LM Studio."
+                            .into(),
+                    ))
+                    .child(
+                        h_flex().child(
+                            Button::new("setup-provider")
+                                .label("Use another model provider…")
+                                .xsmall()
+                                .outline()
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.open_provider_panel(window, cx)
+                                })),
+                        ),
+                    );
             }
         }
 
@@ -586,7 +651,7 @@ impl Workspace {
                         .font_weight(FontWeight::SEMIBOLD)
                         .child("Set up md-wingman"),
                 )
-                .child(step(claude_ready, "1. Claude Code", claude))
+                .child(step(claude_ready, "1. Claude Code and a model", claude))
                 .child(step(
                     jev_ready || wizard.jev_skipped,
                     "2. Jev pre-filter (optional)",

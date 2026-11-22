@@ -14,7 +14,7 @@ use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::assistant::{Assistant, ServiceStatus, auth_mode_from_env};
+use crate::assistant::{Assistant, Connection, ServiceStatus, auth_mode_from_env};
 use crate::document::{Document, split_front_matter, word_count};
 use crate::jev::{Grader, Jev};
 use crate::settings::Settings;
@@ -32,12 +32,18 @@ pub enum ViewMode {
     Preview,
 }
 
+/// Starts the assistant on a connection. Runs off the UI thread, since it
+/// can block.
+pub type StartAssistant = Arc<dyn Fn(Connection) -> Result<Assistant, String> + Send + Sync>;
+
 /// What the workspace talks to outside itself. The app uses the real ones;
 /// tests swap in fakes, so they need no Claude login, TypeSafe key, Keychain
 /// or settings file.
 pub struct Services {
-    /// Starts the assistant. Runs off the UI thread, since it can block.
-    pub start_assistant: Box<dyn FnOnce() -> Result<Assistant, String> + Send>,
+    /// Starts the assistant, again whenever the model provider changes.
+    pub start_assistant: StartAssistant,
+    /// Where the model provider's token is kept.
+    pub tokens: Arc<dyn crate::provider::TokenStore>,
     pub grader: Arc<dyn Grader>,
     /// The settings to start with, and whether changes are written back to
     /// the settings file. `None` reads the file.
@@ -49,9 +55,9 @@ pub struct Services {
 
 impl Services {
     pub fn real() -> Self {
-        let auth = auth_mode_from_env();
         Services {
-            start_assistant: Box::new(move || Assistant::start(auth)),
+            start_assistant: Arc::new(Assistant::start),
+            tokens: Arc::new(crate::provider::KeychainTokens),
             grader: Arc::new(Jev),
             settings: None,
             persist_settings: true,
@@ -70,6 +76,12 @@ pub struct Workspace {
     dirty: bool,
     pub(crate) assistant: Option<Assistant>,
     pub(crate) service_status: ServiceStatus,
+    start: StartAssistant,
+    pub(crate) tokens: Arc<dyn crate::provider::TokenStore>,
+    /// Bumped on every (re)start, so only the latest start counts.
+    assistant_generation: u64,
+    /// The model provider panel, while it's open.
+    pub(crate) provider_panel: Option<crate::provider::ProviderPanel>,
     /// A message for the status bar, such as a save error.
     pub(crate) notice: Option<SharedString>,
     pub(crate) runs: Vec<crate::runs::TaskRun>,
@@ -174,6 +186,10 @@ impl Workspace {
             dirty: false,
             assistant: None,
             service_status: ServiceStatus::Starting,
+            start: services.start_assistant,
+            tokens: services.tokens,
+            assistant_generation: 0,
+            provider_panel: None,
             notice: None,
             runs: Vec::new(),
             next_run_id: 1,
@@ -212,7 +228,7 @@ impl Workspace {
             this.notice = Some(crashed.into());
         }
         this.prepare_jev(cx);
-        this.start_assistant(services.start_assistant, cx);
+        this.start_assistant(None, cx);
         // First launch, or Claude Code wasn't signed in last time: show what
         // to set up, in the Assistant pane, with the editor still focused.
         if !this.settings.setup_done {
@@ -222,17 +238,55 @@ impl Workspace {
         this
     }
 
-    fn start_assistant(
-        &mut self,
-        start: Box<dyn FnOnce() -> Result<Assistant, String> + Send>,
-        cx: &mut Context<Self>,
-    ) {
-        log::info!("starting the assistant");
+    /// How the assistant should reach a model: `WINGMAN_AUTH` if it's set,
+    /// otherwise the model provider from the settings, otherwise Claude.
+    pub(crate) fn wanted_connection(&self) -> Option<crate::provider::ProviderSettings> {
+        match auth_mode_from_env() {
+            Some(_) => None,
+            None => Some(self.settings.provider.clone()).filter(|p| p.enabled),
+        }
+    }
+
+    /// Starts the assistant in the background. `token` is the provider's
+    /// token when it's already in hand; otherwise it's read from the
+    /// Keychain, off the UI thread, here at launch or when the provider was
+    /// just changed, never in the middle of writing.
+    fn start_assistant(&mut self, token: Option<String>, cx: &mut Context<Self>) {
+        self.assistant_generation += 1;
+        let generation = self.assistant_generation;
+        let provider = self.wanted_connection();
+        log::info!(
+            "starting the assistant ({})",
+            provider
+                .as_ref()
+                .map_or("Claude".to_string(), |p| p.display_name())
+        );
         let started = std::time::Instant::now();
-        let start = cx.background_executor().spawn(async move { start() });
+        let start = self.start.clone();
+        let tokens = self.tokens.clone();
+        let start = cx.background_executor().spawn(async move {
+            let connection = match provider {
+                None => Connection::Claude(auth_mode_from_env().unwrap_or_default()),
+                Some(settings) => {
+                    let token = match token {
+                        Some(token) => Some(token),
+                        None => tokens.load().map_err(|e| {
+                            format!(
+                                "Couldn't read the model provider's token from the Keychain: {e}"
+                            )
+                        })?,
+                    };
+                    Connection::Provider { settings, token }
+                }
+            };
+            start(connection)
+        });
         cx.spawn(async move |this, cx| {
             let result = start.await;
             let _ = this.update(cx, |this, cx| {
+                if this.assistant_generation != generation {
+                    return;
+                }
                 match result {
                     Ok(assistant) => {
                         log::info!(
@@ -253,6 +307,17 @@ impl Workspace {
             });
         })
         .detach();
+    }
+
+    /// Stops the assistant and starts it again, as after the model provider
+    /// changed. Whatever it was working on is cancelled.
+    pub(crate) fn restart_assistant(&mut self, token: Option<String>, cx: &mut Context<Self>) {
+        self.cancel_all_runs(cx);
+        // Dropping it stops the service.
+        self.assistant = None;
+        self.service_status = ServiceStatus::Starting;
+        self.start_assistant(token, cx);
+        cx.notify();
     }
 
     fn on_editor_event(
@@ -780,6 +845,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_continuous))
             .on_action(cx.listener(Self::on_toggle_jev))
             .on_action(cx.listener(Self::on_set_jev_key))
+            .on_action(cx.listener(Self::on_model_provider))
             .on_action(cx.listener(Self::on_show_setup))
             .on_action(cx.listener(Self::on_toggle_dark_mode))
             .on_action(cx.listener(Self::on_appearance_and_fonts))
