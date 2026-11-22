@@ -19,7 +19,7 @@ for a full look-over.
 - `crates/md-wingman/src/continuous.rs` and `prefilter.rs`: what gets graded and when.
 - API docs: <https://docs.typesafe.ai>. 429 and 529 mean back off.
 
-## What Dean wants Jev to do
+## What Jev should do
 
 - Judge like a professional copy editor, fact-checker and research editor at a high-profile publication.
 - Any typo at all must clear 0.66 for copy-edit. Clean prose must not.
@@ -36,8 +36,8 @@ runs on the Mac, where the key is in the Keychain:
 cargo test -p md-wingman jev_live -- --ignored --nocapture
 ```
 
-Run it through Remote Control on Dean's iMac (see `build-and-run`). It reads the key from the Keychain or
-`WINGMAN_JEV_KEY`; never print, log or copy the key, and never ask Dean for it.
+Run it through Remote Control on the maintainer's Mac (see `build-and-run`). It reads the key from the Keychain or
+`WINGMAN_JEV_KEY`; never print, log or copy the key, and never ask the maintainer for it.
 
 ## Changing a rubric
 
