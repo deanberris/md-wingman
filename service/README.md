@@ -1,6 +1,8 @@
 # wingman-service
 
-The assistant back-end for md-wingman. It is a small TypeScript program on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview). It listens on a Unix socket and streams Claude's replies to the app. See [../docs/architecture.md](../docs/architecture.md) for the protocol.
+The assistant back-end for md-wingman. It is a small TypeScript program on the [Claude Agent
+SDK](https://code.claude.com/docs/en/agent-sdk/overview). It listens on a Unix socket and streams Claude's replies to
+the app. See [../docs/architecture.md](../docs/architecture.md) for the protocol.
 
 ## Develop
 

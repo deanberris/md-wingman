@@ -1,0 +1,12 @@
+// Markdown lint rules, checked in CI by markdownlint-cli2.
+// Run locally with: npx markdownlint-cli2@0.24.0
+{
+  "default": true,
+  // Lines wrap at 120 columns, the same as the editor's default ruler.
+  // Table rows can't wrap, so they are exempt.
+  "MD013": { "line_length": 120, "code_block_line_length": 120, "tables": false },
+  // Separator rows like |---|---| are fine.
+  "MD060": false,
+  // Allow the inline HTML that GitHub renders.
+  "MD033": { "allowed_elements": ["details", "summary", "kbd", "img", "br", "picture", "source"] }
+}

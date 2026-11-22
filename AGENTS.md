@@ -29,9 +29,9 @@ Run each check and install what is missing, after asking:
 | Needed | Check | Install |
 |---|---|---|
 | Xcode command-line tools | `xcode-select -p` | `xcode-select --install` (opens a dialog the person must accept) |
-| rustup | `rustup --version` | the installer at https://rustup.rs |
+| rustup | `rustup --version` | the installer at <https://rustup.rs> |
 | Bun | `bun --version` | `curl -fsSL https://bun.sh/install \| bash` |
-| Claude Code | `claude --version` | https://claude.com/claude-code |
+| Claude Code | `claude --version` | <https://claude.com/claude-code> |
 
 Notes:
 
@@ -99,7 +99,7 @@ around a signing problem. If signing fails, report the error.
 
 Checking as you write can use Jev, TypeSafe's scoring model, to spend Claude
 requests only where they're needed. It needs a TypeSafe API key from
-https://console.typesafe.ai/keys. Tell the person about it, but let them turn
+<https://console.typesafe.ai/keys>. Tell the person about it, but let them turn
 it on in the app (Assistant ▸ Jev Pre-filter) and paste the key there. The app
 stores it in their Keychain. Don't handle the key yourself.
 

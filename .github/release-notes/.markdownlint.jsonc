@@ -1,0 +1,3 @@
+// Release notes become a release body under GitHub's own title,
+// so they start below the top-level heading.
+{ "extends": "../../.markdownlint.jsonc", "MD041": false }
