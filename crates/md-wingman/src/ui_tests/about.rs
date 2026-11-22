@@ -51,6 +51,7 @@ fn about_opens_one_window_with_the_details(cx: &mut TestAppContext) {
             "about-version",
             "about-website",
             "about-github",
+            "about-sponsor",
             "about-license",
         ]
         .into_iter()
@@ -70,10 +71,15 @@ fn about_opens_one_window_with_the_details(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn about_links_open_the_website_github_and_license(cx: &mut TestAppContext) {
+fn about_links_open_the_website_github_sponsor_and_license(cx: &mut TestAppContext) {
     let h = open(cx, Setup::default());
     open_about(&h, cx);
-    for id in ["about-website", "about-github", "about-license"] {
+    for id in [
+        "about-website",
+        "about-github",
+        "about-sponsor",
+        "about-license",
+    ] {
         in_about(cx, |window, cx| window.click(id, cx));
     }
     assert_eq!(
@@ -81,6 +87,7 @@ fn about_links_open_the_website_github_and_license(cx: &mut TestAppContext) {
         vec![
             about::WEBSITE.to_string(),
             about::REPOSITORY.to_string(),
+            about::SPONSOR.to_string(),
             about::LICENSE_URL.to_string(),
         ]
     );

@@ -3,7 +3,8 @@
 A native macOS Markdown editor with Claude always on hand in a sidebar, to
 fact-check what you write, find references for it, and suggest copy edits.
 
-Website: [md-wingman.dev](https://md-wingman.dev/)
+Website: [md-wingman.dev](https://md-wingman.dev/) ·
+Sponsor: [github.com/sponsors/deanberris](https://github.com/sponsors/deanberris)
 
 > **Status: early development.** The editor and all three assistant features
 > work, but the app has seen little use on macOS yet, so expect rough edges.
@@ -263,7 +264,8 @@ It opens only when you ask, and the cursor stays in your text. ⌘/ again, or ×
 | ⌘Z / ⇧⌘Z | Undo / Redo |
 | ⌘Q | Quit |
 
-md-wingman ▸ About md-wingman shows the version, the contributors, the license and links to this repository and the website.
+md-wingman ▸ About md-wingman shows the version, the contributors, the license and links to this repository, the
+website and the maintainer's GitHub Sponsors page.
 
 ### Settings
 
@@ -377,6 +379,9 @@ Work is tracked in GitHub Issues:
 
 The project is at an early stage. If you are interested, the issues above
 are the best place to follow along or start a discussion.
+
+If md-wingman is useful to you, you can support its development through
+[GitHub Sponsors](https://github.com/sponsors/deanberris).
 
 ## License
 
