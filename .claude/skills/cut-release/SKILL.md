@@ -32,6 +32,10 @@ git tag -a v<version> -m "md-wingman <version>"
 git push origin v<version>
 ```
 
+Cloud sessions can't push tags (the git proxy refuses them), and Remote Control on Dean's iMac may stop at a permission
+prompt. If neither works, Dean can publish the release on github.com instead (Releases ▸ Draft a new release, new tag
+`v<version>` on `main`): that creates the tag, and the workflow fills in the release he made.
+
 The workflow checks that the tag matches `Cargo.toml`, builds an arm64 zip and dmg, writes `SHA256SUMS.txt`, attests the
 files and publishes the release.
 
