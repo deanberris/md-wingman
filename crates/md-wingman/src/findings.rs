@@ -14,8 +14,8 @@ use gpui_kit::*;
 
 use crate::store::{self, SavedClaim};
 use crate::suggestions::{
-    combine_edits, footnote_citation, link_citation, relocate, Claim, EditSuggestion, Insertion,
-    Reference, Relation, Verdict,
+    Claim, EditSuggestion, Insertion, Reference, Relation, Verdict, combine_edits,
+    footnote_citation, link_citation, relocate,
 };
 use crate::workspace::{ViewMode, Workspace};
 
@@ -201,14 +201,13 @@ impl Workspace {
                 .highlight
                 .as_ref()
                 .and_then(|h| h.get_ranges(cx).into_iter().next())
+                && text.get(range.clone()) == Some(f.quote.as_str())
             {
-                if text.get(range.clone()) == Some(f.quote.as_str()) {
-                    if f.anchor != range.start {
-                        f.anchor = range.start;
-                        claims_changed |= f.is_claim();
-                    }
-                    continue;
+                if f.anchor != range.start {
+                    f.anchor = range.start;
+                    claims_changed |= f.is_claim();
                 }
+                continue;
             }
             if let Some(h) = f.highlight.take() {
                 h.clear(cx);
@@ -261,10 +260,10 @@ impl Workspace {
                 None => {
                     f.live = false;
                     // Its fix is where it was: the accept was redone.
-                    if let FindingKind::Edit(e) = &f.kind {
-                        if relocate(&text, &e.replacement, f.anchor, REDO_REACH).is_some() {
-                            f.state = FindingState::Accepted;
-                        }
+                    if let FindingKind::Edit(e) = &f.kind
+                        && relocate(&text, &e.replacement, f.anchor, REDO_REACH).is_some()
+                    {
+                        f.state = FindingState::Accepted;
                     }
                 }
             }

@@ -1,8 +1,8 @@
 //! Light and dark mode, and the editor and preview fonts.
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::Theme;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _, ThemeMode};
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, ThemeMode, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 

@@ -14,16 +14,16 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::Theme;
-use gpui_kit::component::{h_flex, v_flex, Sizable as _};
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::{Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use wingman_client::AuthMode;
 
+use crate::ShowSetup;
 use crate::assistant::auth_mode_from_env;
 use crate::workspace::Workspace;
-use crate::ShowSetup;
 
 /// Claude Code's own installer.
 pub const INSTALL_COMMAND: &str = "curl -fsSL https://claude.ai/install.sh | bash";
@@ -210,7 +210,7 @@ pub fn parse_auth_status(path: PathBuf, output: &str) -> ClaudeStatus {
             return ClaudeStatus::Unknown {
                 path,
                 error: output.trim().lines().next().unwrap_or_default().to_string(),
-            }
+            };
         }
     };
     match value.get("loggedIn").and_then(|v| v.as_bool()) {
@@ -622,7 +622,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     // Not `super::*`: gpui's glob would shadow `#[test]`.
-    use super::{claude_candidates, parse_auth_status, shell_path, terminal_script, ClaudeStatus};
+    use super::{ClaudeStatus, claude_candidates, parse_auth_status, shell_path, terminal_script};
     use std::path::{Path, PathBuf};
 
     #[test]

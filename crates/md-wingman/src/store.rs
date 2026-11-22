@@ -95,7 +95,8 @@ mod tests {
     #[test]
     fn saves_loads_and_clears() {
         let dir = tempfile::tempdir().unwrap();
-        std::env::set_var("WINGMAN_DATA_DIR", dir.path());
+        // SAFETY: no other test reads or writes this variable.
+        unsafe { std::env::set_var("WINGMAN_DATA_DIR", dir.path()) };
         let doc = dir.path().join("post.md");
         std::fs::write(&doc, "The tower opened in 1889.").unwrap();
         assert!(load(&doc).is_empty());
@@ -117,6 +118,7 @@ mod tests {
         assert_eq!(load(&doc), vec![saved]);
         save(&doc, Vec::new()).unwrap();
         assert!(load(&doc).is_empty());
-        std::env::remove_var("WINGMAN_DATA_DIR");
+        // SAFETY: no other test reads or writes this variable.
+        unsafe { std::env::remove_var("WINGMAN_DATA_DIR") };
     }
 }

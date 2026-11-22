@@ -7,15 +7,15 @@ use std::sync::Arc;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{EditorState, InputEvent};
 use gpui_kit::component::resizable::{
-    h_resizable, resizable_panel, ResizablePanelEvent, ResizableState,
+    ResizablePanelEvent, ResizableState, h_resizable, resizable_panel,
 };
 use gpui_kit::component::text::TextView;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::assistant::{auth_mode_from_env, Assistant, ServiceStatus};
-use crate::document::{word_count, Document};
+use crate::assistant::{Assistant, ServiceStatus, auth_mode_from_env};
+use crate::document::{Document, word_count};
 use crate::jev::{Grader, Jev};
 use crate::settings::Settings;
 use crate::{NewFile, Open, Save, SaveAs, TogglePreview};

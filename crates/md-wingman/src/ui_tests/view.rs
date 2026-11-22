@@ -3,7 +3,7 @@
 
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::test::TestWindowExt as _;
-use gpui_kit::{point, px, ElementId, TestAppContext};
+use gpui_kit::{ElementId, TestAppContext, point, px};
 
 use super::*;
 use crate::settings::Appearance;

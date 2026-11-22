@@ -14,10 +14,10 @@ use std::time::{Duration, Instant};
 use gpui_kit::*;
 use wingman_client::TaskKind;
 
+use crate::ToggleContinuous;
 use crate::jev::{Grader, Grades, JevError};
 use crate::suggestions::relocate;
 use crate::workspace::Workspace;
-use crate::ToggleContinuous;
 
 /// Paragraphs with fewer words than this aren't worth a request.
 const MIN_WORDS: usize = 6;
@@ -270,10 +270,10 @@ pub fn paragraphs(text: &str) -> Vec<Range<usize>> {
     // Front matter: a `---` or `+++` block at the very top.
     if let Some((_, first)) = lines.first() {
         let fence = first.trim_end();
-        if fence == "---" || fence == "+++" {
-            if let Some(end) = lines[1..].iter().position(|(_, l)| l.trim_end() == fence) {
-                i = end + 2;
-            }
+        if (fence == "---" || fence == "+++")
+            && let Some(end) = lines[1..].iter().position(|(_, l)| l.trim_end() == fence)
+        {
+            i = end + 2;
         }
     }
 
@@ -466,11 +466,11 @@ impl Workspace {
             if self.continuous.jev_blocked {
                 return;
             }
-            if let Some(at) = self.continuous.retry_at {
-                if at > now {
-                    self.schedule_continuous_at(at - now, cx);
-                    return;
-                }
+            if let Some(at) = self.continuous.retry_at
+                && at > now
+            {
+                self.schedule_continuous_at(at - now, cx);
+                return;
             }
         }
         let threshold = self.settings.jev_threshold;
@@ -763,7 +763,7 @@ impl Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{fingerprint, finished, paragraphs, verdicts, Verdict};
+    use super::{Verdict, fingerprint, finished, paragraphs, verdicts};
     use crate::jev::Grades;
     use wingman_client::TaskKind;
 

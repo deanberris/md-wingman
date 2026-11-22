@@ -23,10 +23,10 @@ use std::sync::{Arc, Mutex};
 use futures::channel::mpsc;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
-    px, size, AnyWindowHandle, App, AppContext as _, Bounds, Entity, Point, TestAppContext, Window,
-    WindowBounds, WindowOptions,
+    AnyWindowHandle, App, AppContext as _, Bounds, Entity, Point, TestAppContext, Window,
+    WindowBounds, WindowOptions, px, size,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use wingman_client::{AuthMode, Event, ServiceInfo, TaskKind};
 
 use crate::assistant::{Assistant, Backend, RunningTask};
