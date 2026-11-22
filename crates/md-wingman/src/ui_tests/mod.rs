@@ -11,6 +11,7 @@ mod assistant;
 mod continuous;
 mod contract;
 mod findings;
+mod format;
 mod provider;
 mod quit;
 mod review;

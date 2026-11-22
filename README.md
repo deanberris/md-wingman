@@ -179,6 +179,10 @@ It never starts by itself. With checking as you write and the Jev pre-filter on,
 
 Click **Aa** at the top of the sidebar, or choose View ▸ Appearance and Fonts…, to pick light, dark or system mode (which follows macOS), the editor's monospace font and size, and the preview's reading font. Only fonts installed on your Mac are offered. View ▸ Toggle Dark Mode switches modes, and ⌘= / ⌘− / ⌘0 change the editor's text size. The ruler stays at its column whatever the font.
 
+### Formatting
+
+Select some text and right-click to style it with Markdown in place: bold, italic, strikethrough, inline code or a link, or, from the Paragraph submenu, a heading, quote, list or code block for every line the selection touches. The Format menu has the same commands. Each one toggles, so applying it again takes it off, and each is one step for ⌘Z. With nothing selected, the word under the cursor is styled. A link uses the URL on the clipboard when there is one; otherwise `url` is selected, ready to type over.
+
 ### Keys
 
 | Keys | Action |
@@ -191,6 +195,8 @@ Click **Aa** at the top of the sidebar, or choose View ▸ Appearance and Fonts�
 | ⇧⌘D | Review the whole document |
 | ⇧⌘K | Check as you write, on or off |
 | ⌘= / ⌘− / ⌘0 | Bigger / smaller / default editor text |
+| ⌘B / ⌘I / ⇧⌘X | Bold / italic / strikethrough the selection |
+| ⌘K | Make the selection a link |
 | ⌥⌘Q | Reflow the paragraph (or selection) to the ruler column |
 | ⌘Z / ⇧⌘Z | Undo / Redo |
 | ⌘Q | Quit |
