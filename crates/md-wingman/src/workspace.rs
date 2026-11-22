@@ -88,6 +88,8 @@ pub struct Workspace {
     pub(crate) key_input: Option<Entity<gpui_kit::component::input::InputState>>,
     /// The appearance panel's font choices, while it's open.
     pub(crate) font_choices: Option<crate::appearance::FontChoices>,
+    /// The Markdown quick reference is open in the Assistant pane.
+    pub(crate) show_guide: bool,
     pub(crate) grader: Arc<dyn Grader>,
     /// The setup wizard, while it's open.
     pub(crate) setup: Option<crate::setup::SetupWizard>,
@@ -184,6 +186,7 @@ impl Workspace {
             review: Default::default(),
             key_input: None,
             font_choices: None,
+            show_guide: false,
             grader: services.grader,
             setup: None,
             probe: services.probe,
@@ -708,6 +711,15 @@ impl Workspace {
                     .text_color(theme.muted_foreground)
                     .child(div().flex_1().child("Assistant"))
                     .child(
+                        Button::new("markdown-guide")
+                            .label("?")
+                            .xsmall()
+                            .ghost()
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.on_markdown_guide(&crate::MarkdownGuide, window, cx)
+                            })),
+                    )
+                    .child(
                         Button::new("appearance-panel")
                             .label("Aa")
                             .xsmall()
@@ -771,6 +783,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_show_log_file))
             .on_action(cx.listener(Self::on_show_crash_reports))
             .on_action(cx.listener(Self::on_report_problem))
+            .on_action(cx.listener(Self::on_markdown_guide))
             .on_action(cx.listener(Self::on_toggle_verbose_logging))
             .size_full()
             .bg(background)

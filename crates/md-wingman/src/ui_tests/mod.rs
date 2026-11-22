@@ -12,6 +12,7 @@ mod continuous;
 mod contract;
 mod findings;
 mod format;
+mod guide;
 mod quit;
 mod review;
 mod setup;
