@@ -42,5 +42,6 @@ them to your reply; don't commit preview screenshots to the repository.
 
 These need the Mac (see `build-and-run`). Run the app with a sample post and `WINGMAN_FAKE=1`, so the sidebar shows
 findings without calling Claude, and capture the window with `screencapture -l <window id>` or `screencapture -w`. Ask
-Dean before taking over the screen on his iMac. Use sample text written for the purpose, never one of Dean's drafts.
+the maintainer before taking over the screen on their Mac. Use sample text written for the purpose, never one of the
+maintainer's drafts.
 Images committed for the site go in `site/` as optimised PNG or WebP, with `width`/`height` and `alt` set in the HTML.

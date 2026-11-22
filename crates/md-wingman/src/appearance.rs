@@ -57,6 +57,13 @@ pub struct FontChoices {
 impl Workspace {
     /// Applies the appearance and fonts from the settings to the theme.
     pub(crate) fn apply_appearance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The native title bars (this window's and the About window's)
+        // follow the app's appearance, not the theme, so set that too.
+        cx.set_window_appearance(match self.settings.appearance {
+            Appearance::System => None,
+            Appearance::Light => Some(WindowAppearance::Light),
+            Appearance::Dark => Some(WindowAppearance::Dark),
+        });
         let dark = match self.settings.appearance {
             Appearance::System => matches!(
                 window.appearance(),

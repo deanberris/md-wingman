@@ -15,7 +15,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::assistant::{Assistant, Connection, ServiceStatus, auth_mode_from_env};
-use crate::document::{Document, word_count};
+use crate::document::{Document, split_front_matter, word_count};
 use crate::jev::{Grader, Jev};
 use crate::settings::Settings;
 use crate::{NewFile, Open, Save, SaveAs, TogglePreview};
@@ -689,6 +689,11 @@ impl Workspace {
             ViewMode::Raw => self.render_raw_editor(window, cx),
             ViewMode::Preview => {
                 let text = self.text(cx);
+                let (front_matter, body) = split_front_matter(&text);
+                let front_matter = front_matter
+                    .filter(|f| !f.trim().is_empty())
+                    .map(|f| render_front_matter(f, cx));
+                let body = body.to_string();
                 div()
                     .id("preview-scroll")
                     .size_full()
@@ -703,12 +708,13 @@ impl Workspace {
                                 .when_some(self.settings.preview_font.clone(), |d, font| {
                                     d.font_family(font)
                                 })
+                                .children(front_matter)
                                 .child(
                                     TextView::markdown(
                                         ElementId::Name(
                                             format!("preview-{}", self.revision).into(),
                                         ),
-                                        text,
+                                        body,
                                     )
                                     .selectable(true),
                                 ),
@@ -885,4 +891,27 @@ impl Render for Workspace {
             })
             .child(self.render_status_bar(cx))
     }
+}
+
+/// Front matter in the preview: a small, muted block of its lines, so the
+/// post's metadata is visible without reading as part of the post.
+fn render_front_matter(front_matter: &str, cx: &App) -> AnyElement {
+    let theme = cx.theme();
+    v_flex()
+        .id("preview-front-matter")
+        .test_support()
+        .mb_6()
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .bg(theme.muted)
+        .text_xs()
+        .text_color(theme.muted_foreground)
+        .font_family(theme.mono_font_family.clone())
+        .children(
+            front_matter
+                .lines()
+                .map(|line| div().child(SharedString::from(line.to_string()))),
+        )
+        .into_any_element()
 }

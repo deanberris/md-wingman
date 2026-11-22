@@ -395,7 +395,8 @@ impl Workspace {
                 .and_then(|d| {
                     serde_json::from_value::<ReferencesReply>(d).map_err(|e| e.to_string())
                 })
-                .map(|r| {
+                .map(|mut r| {
+                    r.dedupe();
                     let items = r
                         .references
                         .into_iter()
@@ -515,23 +516,16 @@ impl Workspace {
         let theme = cx.theme().clone();
         let ready = matches!(self.service_status, ServiceStatus::Ready(_));
 
-        let mut list = v_flex().gap_3().p_3();
-        // First, so it shows even when opened from the setup wizard.
-        if let Some(panel) = self.render_provider_panel(&theme, cx) {
-            list = list.child(panel);
-        }
-        if let Some(panel) = self.render_setup(&theme, cx) {
-            list = list.child(panel);
-        }
-        if let Some(panel) = self.render_guide(&theme, cx) {
-            list = list.child(panel);
-        }
-        if let Some(panel) = self.render_appearance_panel(&theme, cx) {
-            list = list.child(panel);
-        }
-        if let Some(panel) = self.render_key_panel(&theme, cx) {
-            list = list.child(panel);
-        }
+        // The provider panel comes first, so it shows even when opened from
+        // the setup wizard.
+        let mut list = v_flex()
+            .gap_3()
+            .p_3()
+            .children(self.render_provider_panel(&theme, cx))
+            .children(self.render_setup(&theme, cx))
+            .children(self.render_guide(&theme, cx))
+            .children(self.render_appearance_panel(&theme, cx))
+            .children(self.render_key_panel(&theme, cx));
         if self.settings.continuous {
             let jev = self.settings.jev_prefilter;
             list = list.child(
@@ -600,8 +594,14 @@ impl Workspace {
                     .child(message),
             );
         }
-        // Fact-checks of the text under the cursor, wherever they came from.
-        let at_cursor = self.claims_at_cursor(cx);
+        // Fact-checks of the text under the cursor, moved up from the list
+        // of the document's fact-checks below. Ones in an open run's card
+        // are left there, so no verdict shows twice.
+        let at_cursor: Vec<u64> = self
+            .claims_at_cursor(cx)
+            .into_iter()
+            .filter(|id| self.finding(*id).is_some_and(|f| f.run.is_none()))
+            .collect();
         if !at_cursor.is_empty() {
             list = list.child(section_heading("At the cursor", &theme));
             for id in &at_cursor {
@@ -657,16 +657,26 @@ impl Workspace {
             .findings
             .iter()
             .filter(|f| f.is_claim() && f.run.is_none() && f.visible())
+            .filter(|f| !at_cursor.contains(&f.id))
             .collect();
         kept.sort_by_key(|f| f.anchor);
         if !kept.is_empty() {
+            let heading = if at_cursor.is_empty() {
+                "Fact-checks in this document"
+            } else {
+                "Other fact-checks in this document"
+            };
             list = list.child(section_heading(
-                &format!("Fact-checks in this document ({})", kept.len()),
+                &format!("{heading} ({})", kept.len()),
                 &theme,
             ));
             for f in kept {
                 list = list.child(self.render_finding("kept", f, &theme, cx));
             }
+        }
+
+        if let Some(panel) = self.render_review_suggestion(&theme, cx) {
+            list = list.child(panel);
         }
 
         v_flex()
@@ -970,10 +980,7 @@ impl Workspace {
             }
             FindingKind::Reference(r) => {
                 let url = r.url.clone();
-                let meta: Vec<&str> = [r.authors.trim(), r.year.trim(), r.publisher.trim()]
-                    .into_iter()
-                    .filter(|s| !s.is_empty())
-                    .collect();
+                let meta = r.meta();
                 v_flex()
                     .gap_1()
                     .child(

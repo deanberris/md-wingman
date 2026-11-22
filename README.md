@@ -3,7 +3,8 @@
 A native macOS Markdown editor with Claude always on hand in a sidebar, to
 fact-check what you write, find references for it, and suggest copy edits.
 
-Website: [md-wingman.dev](https://md-wingman.dev/)
+Website: [md-wingman.dev](https://md-wingman.dev/) ·
+Sponsor: [github.com/sponsors/deanberris](https://github.com/sponsors/deanberris)
 
 > **Status: early development.** The editor and all three assistant features
 > work, but the app has seen little use on macOS yet, so expect rough edges.
@@ -180,8 +181,9 @@ so none of this applies. Signed and notarized builds will come once the app is r
 
 #### Making a release
 
-Push a tag that matches the version in `Cargo.toml`, such as `v0.1.0`. `.github/workflows/release.yml` builds the app
-with `scripts/package.sh`, makes a zip and a disk image, attests them, and publishes a pre-release with checksums and
+Push a tag that matches the version in `Cargo.toml`, such as `v0.1.0`, or publish a release with that new tag on main
+from github.com (Releases ▸ Draft a new release). `.github/workflows/release.yml` builds the app with
+`scripts/package.sh`, makes a zip and a disk image, attests them, and publishes a pre-release with checksums and
 install notes from `.github/release-notes/`. Pull requests that change the release path run the same build without
 publishing. Once the repository has the Developer ID and notary secrets listed at the top of the workflow, releases are
 signed with Developer ID, notarized and stapled instead, with no other change.
@@ -296,7 +298,8 @@ It opens only when you ask, and the cursor stays in your text. ⌘/ again, or ×
 | ⌘Z / ⇧⌘Z | Undo / Redo |
 | ⌘Q | Quit |
 
-md-wingman ▸ About md-wingman shows the version, the contributors, the license and links to this repository and the website.
+md-wingman ▸ About md-wingman shows the version, the contributors, the license and links to this repository, the
+website and the maintainer's GitHub Sponsors page.
 
 ### Settings
 
@@ -410,6 +413,9 @@ Work is tracked in GitHub Issues:
 
 The project is at an early stage. If you are interested, the issues above
 are the best place to follow along or start a discussion.
+
+If md-wingman is useful to you, you can support its development through
+[GitHub Sponsors](https://github.com/sponsors/deanberris).
 
 ## License
 

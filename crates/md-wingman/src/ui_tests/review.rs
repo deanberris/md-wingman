@@ -94,6 +94,39 @@ fn suggests_a_review_once_the_draft_looks_ready_but_never_starts_one(cx: &mut Te
 }
 
 #[gpui_kit::test]
+fn the_suggestion_appears_below_suggestions_already_shown(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            text: POST,
+            settings: settings(true),
+            ..Default::default()
+        },
+    );
+    h.jev.grade_with(|_| Ok(grades(0.9, 0.0, 0.0)));
+    h.jev.readiness_with(|_| Ok(0.8));
+    answer_everything(&h);
+    h.cursor_at_end(cx);
+    h.type_text(
+        cx,
+        "\nIn the end teh tower stayed, and Paris is better for it in every way.",
+    );
+    h.wait(cx, PAUSE + 10);
+    let teh = h.finding_id(cx, "teh");
+    let card = finding_button("accept", "written", teh);
+    let before = h.with_window(cx, |w, _| w.find(card.clone()).bounds());
+
+    long_pause(&h, cx);
+    assert!(h.exists(cx, "review-start"));
+    let (after, review) = h.with_window(cx, |w, _| {
+        (w.find(card).bounds(), w.find("review-start").bounds())
+    });
+    // The suggestion didn't move, and the review's suggestion is below it.
+    assert_eq!(before.origin, after.origin);
+    assert!(review.origin.y > after.origin.y);
+}
+
+#[gpui_kit::test]
 fn no_suggestion_for_an_unfinished_draft(cx: &mut TestAppContext) {
     let h = open(
         cx,

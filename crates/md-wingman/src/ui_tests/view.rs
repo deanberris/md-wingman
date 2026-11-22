@@ -35,6 +35,32 @@ fn raw_and_preview_toggle_from_the_toolbar_and_shortcut(cx: &mut TestAppContext)
 }
 
 #[gpui_kit::test]
+fn the_preview_shows_front_matter_as_metadata_not_a_heading(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            text: "---\ntitle: Plain Text\ndate: 2026-11-21\n---\n\n# Body\n",
+            ..Default::default()
+        },
+    );
+    h.click(cx, "mode-preview");
+    assert!(h.exists(cx, "preview-front-matter"));
+}
+
+#[gpui_kit::test]
+fn the_preview_has_no_metadata_block_without_front_matter(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            text: "Intro.\n\n---\n\nAfter a rule.\n",
+            ..Default::default()
+        },
+    );
+    h.click(cx, "mode-preview");
+    assert!(!h.exists(cx, "preview-front-matter"));
+}
+
+#[gpui_kit::test]
 fn typing_marks_the_document_changed_and_counts_words(cx: &mut TestAppContext) {
     let h = open(cx, Setup::default());
     assert_eq!(h.read(cx, |ws, _| ws.title()), "Untitled — md-wingman");
