@@ -233,7 +233,11 @@ stays at its column whatever the font.
 
 ### Formatting
 
-Select some text and right-click to style it with Markdown in place: bold, italic, strikethrough, inline code or a link, or, from the Paragraph submenu, a heading, quote, list or code block for every line the selection touches. The Format menu has the same commands. Each one toggles, so applying it again takes it off, and each is one step for ⌘Z. With nothing selected, the word under the cursor is styled. A link uses the URL on the clipboard when there is one; otherwise `url` is selected, ready to type over.
+Select some text and right-click to style it with Markdown in place: bold, italic, strikethrough, inline code or a link,
+or, from the Paragraph submenu, a heading, quote, list or code block for every line the selection touches. The Format
+menu has the same commands. Each one toggles, so applying it again takes it off, and each is one step for ⌘Z. With
+nothing selected, the word under the cursor is styled. A link uses the URL on the clipboard when there is one; otherwise
+`url` is selected, ready to type over.
 
 ### Keys
 
