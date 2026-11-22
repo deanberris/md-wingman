@@ -146,8 +146,9 @@ so none of this applies. Signed and notarized builds will come once the app is r
 
 #### Making a release
 
-Push a tag that matches the version in `Cargo.toml`, such as `v0.1.0`. `.github/workflows/release.yml` builds the app
-with `scripts/package.sh`, makes a zip and a disk image, attests them, and publishes a pre-release with checksums and
+Push a tag that matches the version in `Cargo.toml`, such as `v0.1.0`, or publish a release with that new tag on main
+from github.com (Releases ▸ Draft a new release). `.github/workflows/release.yml` builds the app with
+`scripts/package.sh`, makes a zip and a disk image, attests them, and publishes a pre-release with checksums and
 install notes from `.github/release-notes/`. Pull requests that change the release path run the same build without
 publishing. Once the repository has the Developer ID and notary secrets listed at the top of the workflow, releases are
 signed with Developer ID, notarized and stapled instead, with no other change.

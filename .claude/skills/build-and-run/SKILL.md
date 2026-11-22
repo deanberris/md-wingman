@@ -1,6 +1,6 @@
 ---
 name: build-and-run
-description: Build md-wingman, run it from source or install the .app on a Mac, including on Dean's iMac through Remote Control, and what can be built in a Linux container.
+description: Build md-wingman, run it from source or install the .app on a Mac, including on the maintainer's Mac through Remote Control, and what can be built in a Linux container.
 ---
 
 # Build and run md-wingman
@@ -28,11 +28,12 @@ From the repository root:
 - If every task fails with "Claude didn't return a structured reply", check `claude auth status`: Claude Code is
   probably signed out. The person signs in themselves (`claude auth login`).
 
-## Dean's iMac
+## The maintainer's Mac
 
-Dean's clone is `~/Projects/md-wingman` on his iMac. From a cloud session, start a Remote Control session in that
-folder to build, run `jev_live`, or check the app. `git pull` (or check out the PR branch) there first. Ask Dean before
-doing anything that shows UI on his screen while he may be working, and leave the checkout on `main` afterwards.
+The maintainer's clone is `~/Projects/md-wingman` on their Mac. From a cloud session, start a Remote Control session in
+that folder to build, run `jev_live`, or check the app. `git pull` (or check out the PR branch) there first. Ask the
+maintainer before doing anything that shows UI on their screen while they may be working, and leave the checkout on
+`main` afterwards.
 
 ## In a Linux container
 
