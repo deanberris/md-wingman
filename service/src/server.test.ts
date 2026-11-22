@@ -19,16 +19,15 @@ async function connect(runner: Runner, options: Partial<Parameters<typeof startS
     socket: {
       data(_s, chunk) {
         buf += chunk.toString();
-        let nl: number;
-        while ((nl = buf.indexOf("\n")) >= 0) {
+        for (let nl = buf.indexOf("\n"); nl >= 0; nl = buf.indexOf("\n")) {
           events.push(JSON.parse(buf.slice(0, nl)));
           buf = buf.slice(nl + 1);
         }
-        waiters.splice(0).forEach((w) => w());
+        for (const w of waiters.splice(0)) w();
       },
     },
   });
-  const send = (obj: unknown) => sock.write(JSON.stringify(obj) + "\n");
+  const send = (obj: unknown) => sock.write(`${JSON.stringify(obj)}\n`);
   const waitFor = async (pred: (e: Event) => boolean) => {
     while (!events.some(pred)) await new Promise<void>((r) => waiters.push(r));
     return events.find(pred)!;

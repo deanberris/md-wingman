@@ -29,9 +29,9 @@ Run each check and install what is missing, after asking:
 | Needed | Check | Install |
 |---|---|---|
 | Xcode command-line tools | `xcode-select -p` | `xcode-select --install` (opens a dialog the person must accept) |
-| rustup | `rustup --version` | the installer at https://rustup.rs |
+| rustup | `rustup --version` | the installer at <https://rustup.rs> |
 | Bun | `bun --version` | `curl -fsSL https://bun.sh/install \| bash` |
-| Claude Code | `claude --version` | https://claude.com/claude-code |
+| Claude Code | `claude --version` | <https://claude.com/claude-code> |
 
 Notes:
 
@@ -105,7 +105,7 @@ around a signing problem. If signing fails, report the error.
 
 Checking as you write can use Jev, TypeSafe's scoring model, to spend Claude
 requests only where they're needed. It needs a TypeSafe API key from
-https://console.typesafe.ai/keys. Tell the person about it, but let them turn
+<https://console.typesafe.ai/keys>. Tell the person about it, but let them turn
 it on in the app (Assistant ▸ Jev Pre-filter) and paste the key there. The app
 stores it in their Keychain. Don't handle the key yourself.
 
@@ -116,13 +116,26 @@ stores it in their Keychain. Don't handle the key yourself.
 ## Changing the code
 
 - Rust workspace: `crates/md-wingman` (the gpui app), `crates/wingman-client`
-  (client for the service) and `crates/wingman-log` (the log file). TypeScript service in
+  (client for the service), `crates/wingman-log` (the log file) and
+  `crates/style-check` (house-style checks clippy lacks). TypeScript service in
   `service/`, on the Claude Agent SDK, compiled with Bun.
 - Before you push, run what CI runs:
   - `cargo fmt --all -- --check`
   - `cargo clippy --workspace --all-targets --locked -- -D warnings`
-  - `cargo test --workspace --locked` (includes the headless UI tests)
-  - `cd service && bun install --frozen-lockfile && bun run typecheck && bun test`
+  - `cargo test --workspace --locked` (includes the headless UI tests and the
+    control-flow depth check)
+  - `cd service && bun install --frozen-lockfile && bun run lint && bun run typecheck && bun test`
+  - `npx markdownlint-cli2@0.24.0` and `shellcheck scripts/*.sh`
+- Style: return early instead of nesting. Use `let ... else`, `?`, `return`
+  and `continue` to leave the main path flat, and let chains
+  (`if let Some(x) = y && x > 0`) instead of an `if` inside an `if let`.
+  Control flow (`if`, `match`, loops) nests at most 3 deep in a function;
+  `cargo run -p style-check` lists anything deeper. The lints are in
+  `Cargo.toml` (`[workspace.lints]`) and `clippy.toml`. The service follows
+  the same rule through Biome (`service/biome.json`); `bun run format` fixes
+  formatting.
+- Markdown wraps at 120 columns (`.markdownlint.jsonc`); tables are exempt.
+  Whitespace and line endings follow `.editorconfig`.
 - The UI must never interrupt the person while they type: no modal dialogs or
   Keychain prompts mid-typing. Assistant work happens in the background and
   shows up as marks by the text and in the sidebar.
@@ -134,3 +147,19 @@ stores it in their Keychain. Don't handle the key yourself.
 - Log through the `log` macros. Never log keys or tokens, and never log
   document text directly: pass it through `wingman_log::text` (or `log.text`
   in the service), which shows only its size unless `WINGMAN_LOG_TEXT=1`.
+
+## Skills for common tasks
+
+Step-by-step guides for recurring work live in `.claude/skills/<name>/SKILL.md`. Claude Code loads them by name; other
+agents can read them as plain Markdown. Read the matching one before starting.
+
+| Skill | Use it to |
+|---|---|
+| [check](.claude/skills/check/SKILL.md) | run what CI runs before you push |
+| [code-review](.claude/skills/code-review/SKILL.md) | review a local diff or a PR (also used by `.github/workflows/claude-review.yml`) |
+| [build-and-run](.claude/skills/build-and-run/SKILL.md) | build, run or install the app on a Mac, on Dean's iMac, or in a Linux container |
+| [add-tests](.claude/skills/add-tests/SKILL.md) | add headless UI tests, unit tests, service tests and contract fixtures |
+| [cut-release](.claude/skills/cut-release/SKILL.md) | prepare a release; never push a version tag without the maintainer's OK |
+| [website-screenshots](.claude/skills/website-screenshots/SKILL.md) | change md-wingman.dev and capture screenshots of it or the app |
+| [tune-jev](.claude/skills/tune-jev/SKILL.md) | calibrate the Jev pre-filter rubrics against live grades |
+| [file-issue](.claude/skills/file-issue/SKILL.md) | file and track work in GitHub Issues |

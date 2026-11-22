@@ -4,6 +4,28 @@ members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/deanberris/md-wingman"
+
+# Lints for every crate (each crate opts in with `[lints] workspace = true`).
+# CI runs clippy with `-D warnings`, so each of these fails the build.
+#
+# The house style is early returns over nested conditionals: bail out with
+# `let ... else`, `?` or `return`/`continue` and keep the happy path flat.
+# Clippy's style group already forbids collapsible `if`s (with let chains
+# since Rust 2024); these add the rest. crates/style-check limits how deeply
+# `if`/`match`/loops nest, which clippy can't do without counting closures.
+[workspace.lints.clippy]
+# Blocks nested deeper than `excessive-nesting-threshold` (clippy.toml), a backstop.
+excessive_nesting = "warn"
+# `let Some(x) = y else { return }` instead of a `match`/`if let` that only bails.
+manual_let_else = "warn"
+# No `else` after a branch that returns, breaks or continues.
+redundant_else = "warn"
+# No `continue` that could be an early `continue` instead of an `else`.
+needless_continue = "warn"
+# Functions over `cognitive-complexity-threshold` (clippy.toml) need splitting.
+cognitive_complexity = "warn"
+# `if !x { a } else { b }` reads better as `if x { b } else { a }`.
+if_not_else = "warn"

@@ -12,7 +12,7 @@
 
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const ENDPOINT: &str = "https://api.typesafe.ai/v1/systemone";
 const KEYCHAIN_SERVICE: &str = "md-wingman";
@@ -444,8 +444,8 @@ pub fn clear_key() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        document_sketch, grade, grade_readiness, load_key, parse_grades, parse_readiness,
-        readiness_request_body, request_body, MAX_DOCUMENT_BYTES,
+        MAX_DOCUMENT_BYTES, document_sketch, grade, grade_readiness, load_key, parse_grades,
+        parse_readiness, readiness_request_body, request_body,
     };
     use serde_json::json;
 
@@ -554,12 +554,36 @@ mod tests {
         // Each sample with whether it should clear 0.66 for copy-edit,
         // fact-check and references.
         let samples = [
-            ("typos", [true, false, false], "I went to the confrence last weak and it was realy usefull. I enjoyed the talks alot and met some grate people."),
-            ("one typo", [true, false, false], "I spent Saturday morning rewriting the parser, and by lunch it handled every file I recieved from the team."),
-            ("one slip", [true, false, false], "We moved the build to the new machine last month, and its been noticeably faster ever since."),
-            ("clean", [false, false, false], "I spent Saturday morning rewriting the parser, and by lunch it handled every file I received from the team."),
-            ("expert view", [false, true, true], "Most of the growth in cloud spending now comes from AI workloads, and the big providers are building data centres faster than the power grid can keep up."),
-            ("statistic", [false, true, true], "Rust has topped Stack Overflow's survey as the most admired language for nine years running."),
+            (
+                "typos",
+                [true, false, false],
+                "I went to the confrence last weak and it was realy usefull. I enjoyed the talks alot and met some grate people.",
+            ),
+            (
+                "one typo",
+                [true, false, false],
+                "I spent Saturday morning rewriting the parser, and by lunch it handled every file I recieved from the team.",
+            ),
+            (
+                "one slip",
+                [true, false, false],
+                "We moved the build to the new machine last month, and its been noticeably faster ever since.",
+            ),
+            (
+                "clean",
+                [false, false, false],
+                "I spent Saturday morning rewriting the parser, and by lunch it handled every file I received from the team.",
+            ),
+            (
+                "expert view",
+                [false, true, true],
+                "Most of the growth in cloud spending now comes from AI workloads, and the big providers are building data centres faster than the power grid can keep up.",
+            ),
+            (
+                "statistic",
+                [false, true, true],
+                "Rust has topped Stack Overflow's survey as the most admired language for nine years running.",
+            ),
         ];
         let mut wrong = Vec::new();
         for (name, expect, text) in samples {

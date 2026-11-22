@@ -282,9 +282,11 @@ fn a_paragraph_edited_during_the_review_is_reviewed_again(cx: &mut TestAppContex
     }
     let requests = h.assistant.requests();
     assert_eq!(requests.len(), 6);
-    assert!(requests[3..]
-        .iter()
-        .all(|(_, t)| t.contains("Really, Go early")));
+    assert!(
+        requests[3..]
+            .iter()
+            .all(|(_, t)| t.contains("Really, Go early"))
+    );
 
     // Its findings land on the new text.
     h.assistant.send(3, copy_edit_reply(&[("teh", "the")]));

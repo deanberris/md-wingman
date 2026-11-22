@@ -2,11 +2,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, type SDKMessage, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import { claudeEnv, type AuthMode, type Provider } from "./auth";
+import { type AuthMode, claudeEnv, type Provider } from "./auth";
 import { resolveClaudePath } from "./claudePath";
-import type { TaskKind } from "./protocol";
-import { TASKS, buildPrompt, type TaskSpec } from "./tasks";
 import { log as defaultLog, type Logger } from "./log";
+import type { TaskKind } from "./protocol";
+import { buildPrompt, TASKS, type TaskSpec } from "./tasks";
 
 export interface RunInput {
   /** The request's id, for the log. */
@@ -75,20 +75,26 @@ export function taskTools(spec: Pick<TaskSpec, "tools">, webSearch: boolean): st
   return webSearch ? spec.tools : spec.tools.filter((t) => t !== "WebSearch");
 }
 
+/** A task's instructions, given what the endpoint supports. */
+function taskPrompt(spec: Pick<TaskSpec, "tools" | "systemPrompt">, webSearch: boolean): string {
+  if (webSearch || !spec.tools.includes("WebSearch")) return spec.systemPrompt;
+  return `${spec.systemPrompt}\n\n${NO_WEB_SEARCH}`;
+}
+
 /** The Agent SDK's `query`. Tests pass a scripted one to `makeAgentRunner`. */
 export type QueryFn = (args: Parameters<typeof query>[0]) => AsyncIterable<SDKMessage>;
 
 async function runAgent(
   { id = "?", task, text, context, signal, onDelta, onStatus }: RunInput,
-  { env, model, webSearch, auth }: AgentSetup,
+  setup: AgentSetup,
   query: QueryFn,
   log: Logger,
 ): Promise<RunResult> {
   const spec = TASKS[task];
-  const tools = taskTools(spec, webSearch);
   const claudePath = resolveClaudePath();
+  const tools = taskTools(spec, setup.webSearch);
   log.debug(
-    `task ${id}: Claude Code ${claudePath ?? "(bundled)"}, model ${model || "default"}, tools [${tools.join(", ")}], max ${spec.maxTurns} turns`,
+    `task ${id}: Claude Code ${claudePath ?? "(bundled)"}, model ${setup.model || "default"}, tools [${tools.join(", ")}], max ${spec.maxTurns} turns`,
   );
   const abortController = new AbortController();
   const onAbort = () => abortController.abort();
@@ -97,54 +103,20 @@ async function runAgent(
   try {
     const q = query({
       prompt: buildPrompt(text, context),
-      options: {
-        systemPrompt: webSearch || !spec.tools.includes("WebSearch") ? spec.systemPrompt : `${spec.systemPrompt}\n\n${NO_WEB_SEARCH}`,
-        tools,
-        allowedTools: tools,
-        // Anything not listed above is refused instead of prompting: there is
-        // no one at a terminal to answer a permission prompt.
-        permissionMode: "dontAsk",
-        maxTurns: spec.maxTurns,
-        outputFormat: spec.schema ? { type: "json_schema", schema: spec.schema } : undefined,
-        model,
-        pathToClaudeCodeExecutable: claudePath,
-        includePartialMessages: true,
-        persistSession: false,
-        // Don't pick up the user's CLAUDE.md files or project settings.
-        settingSources: [],
-        cwd: workDir(),
-        abortController,
-        env,
-        stderr: (data: string) => {
-          for (const line of data.split("\n")) if (line.trim()) log.debug(`task ${id}: claude: ${line.trim()}`);
-        },
-      },
+      options: agentOptions(spec, { id, setup, claudePath, abortController, log }),
     });
 
+    const report: Reporter = { id, log, onDelta, onStatus };
     let streamed = "";
     for await (const msg of q) {
-      if (msg.type === "stream_event" && msg.parent_tool_use_id === null) {
-        const ev = msg.event;
-        if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
-          streamed += ev.delta.text;
-          onDelta(ev.delta.text);
-        } else if (ev.type === "content_block_start" && ev.content_block.type === "server_tool_use") {
-          onStatus(`Using ${ev.content_block.name}`);
-        } else if (ev.type === "content_block_start" && ev.content_block.type === "tool_use") {
-          // StructuredOutput is how the final answer is delivered, not a step to report.
-          onStatus(ev.content_block.name === "StructuredOutput" ? "Writing up" : `Using ${ev.content_block.name}`);
-        }
-      } else if (msg.type === "system" && msg.subtype === "init") {
-        log.info(`task ${id}: Claude Code ${msg.claude_code_version ?? "?"}, model ${msg.model}, credential ${msg.apiKeySource}`);
-      } else if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
-        for (const block of msg.message.content) {
-          if (block.type === "tool_use" || block.type === "server_tool_use") log.debug(`task ${id}: tool ${block.name}`);
-        }
-      } else if (msg.type === "result") {
+      if (msg.type === "result") {
         log.info(`task ${id}: ${resultSummary(msg)}`);
-        if (msg.subtype === "success" && msg.is_error) log.warn(`task ${id}: Claude said: ${msg.result?.trim()}`);
-        return taskResult(msg, spec, streamed, auth);
+        if (msg.subtype === "success" && msg.is_error) {
+          log.warn(`task ${id}: Claude said: ${msg.result?.trim()}`);
+        }
+        return taskResult(msg, spec, streamed, setup.auth);
       }
+      streamed += reportMessage(msg, report);
     }
     if (signal.aborted) throw new Error("cancelled");
     log.warn(`task ${id}: the SDK ended without a result message`);
@@ -152,6 +124,97 @@ async function runAgent(
   } finally {
     signal.removeEventListener("abort", onAbort);
   }
+}
+
+type QueryOptions = NonNullable<Parameters<QueryFn>[0]["options"]>;
+
+/** The Agent SDK options for one task. */
+function agentOptions(
+  spec: TaskSpec,
+  run: {
+    id: string;
+    setup: AgentSetup;
+    claudePath: string | undefined;
+    abortController: AbortController;
+    log: Logger;
+  },
+): QueryOptions {
+  const tools = taskTools(spec, run.setup.webSearch);
+  return {
+    systemPrompt: taskPrompt(spec, run.setup.webSearch),
+    tools,
+    allowedTools: tools,
+    // Anything not listed above is refused instead of prompting: there is
+    // no one at a terminal to answer a permission prompt.
+    permissionMode: "dontAsk",
+    maxTurns: spec.maxTurns,
+    outputFormat: spec.schema ? { type: "json_schema", schema: spec.schema } : undefined,
+    model: run.setup.model,
+    pathToClaudeCodeExecutable: run.claudePath,
+    includePartialMessages: true,
+    persistSession: false,
+    // Don't pick up the user's CLAUDE.md files or project settings.
+    settingSources: [],
+    cwd: workDir(),
+    abortController: run.abortController,
+    env: run.setup.env,
+    stderr: (data: string) => {
+      for (const line of data.split("\n")) {
+        if (line.trim()) run.log.debug(`task ${run.id}: claude: ${line.trim()}`);
+      }
+    },
+  };
+}
+
+/** Where a task's progress goes while it runs. */
+interface Reporter {
+  id: string;
+  log: Logger;
+  onDelta: (text: string) => void;
+  onStatus: (message: string) => void;
+}
+
+/**
+ * Passes on what one SDK message (other than the result) says about the
+ * task's progress, and returns the reply text it streamed, if any.
+ */
+function reportMessage(msg: SDKMessage, report: Reporter): string {
+  if (msg.type === "stream_event" && msg.parent_tool_use_id === null) {
+    return reportStreamEvent(msg.event, report);
+  }
+  if (msg.type === "system" && msg.subtype === "init") {
+    report.log.info(
+      `task ${report.id}: Claude Code ${msg.claude_code_version ?? "?"}, model ${msg.model}, credential ${msg.apiKeySource}`,
+    );
+    return "";
+  }
+  if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
+    for (const block of msg.message.content) {
+      if (block.type === "tool_use" || block.type === "server_tool_use") {
+        report.log.debug(`task ${report.id}: tool ${block.name}`);
+      }
+    }
+  }
+  return "";
+}
+
+type StreamEvent = Extract<SDKMessage, { type: "stream_event" }>["event"];
+
+/** Streams reply text to `onDelta` and tool use to `onStatus`. */
+function reportStreamEvent(ev: StreamEvent, report: Reporter): string {
+  if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
+    report.onDelta(ev.delta.text);
+    return ev.delta.text;
+  }
+  if (ev.type !== "content_block_start") return "";
+  const block = ev.content_block;
+  if (block.type === "server_tool_use") {
+    report.onStatus(`Using ${block.name}`);
+  } else if (block.type === "tool_use") {
+    // StructuredOutput is how the final answer is delivered, not a step to report.
+    report.onStatus(block.name === "StructuredOutput" ? "Writing up" : `Using ${block.name}`);
+  }
+  return "";
 }
 
 /** A result message's outcome, time, turns, cost and tokens, for the log. */

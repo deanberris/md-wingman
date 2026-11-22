@@ -14,7 +14,13 @@ export type Level = "fatal" | "error" | "warn" | "info" | "debug" | "trace";
 const ORDER: Record<Level, number> = { fatal: 0, error: 0, warn: 1, info: 2, debug: 3, trace: 4 };
 
 /** Environment variables whose values must never be logged. */
-const SECRET_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_FOUNDRY_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "WINGMAN_JEV_KEY"];
+const SECRET_VARS = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_FOUNDRY_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "WINGMAN_JEV_KEY",
+];
 
 export function parseLevel(value: string | undefined): Level {
   const v = (value ?? "").trim().toLowerCase();
@@ -26,7 +32,9 @@ export function parseLevel(value: string | undefined): Level {
 export function scrub(line: string, secrets: string[] = []): string {
   let out = line;
   for (const s of secrets) if (s.length >= 8) out = out.split(s).join("[redacted]");
-  return out.replace(/sk-[A-Za-z0-9_\-.=]{16,}/g, "sk-[redacted]").replace(/Bearer [A-Za-z0-9_\-.=]{8,}/g, "Bearer [redacted]");
+  return out
+    .replace(/sk-[A-Za-z0-9_\-.=]{16,}/g, "sk-[redacted]")
+    .replace(/Bearer [A-Za-z0-9_\-.=]{8,}/g, "Bearer [redacted]");
 }
 
 /** A short, stable fingerprint (FNV-1a), matching the app's. */
@@ -53,7 +61,7 @@ export interface Logger {
 
 export function createLogger(
   env: NodeJS.ProcessEnv = process.env,
-  write: (line: string) => void = (line) => process.stderr.write(line + "\n"),
+  write: (line: string) => void = (line) => process.stderr.write(`${line}\n`),
 ): Logger {
   const level = parseLevel(env.WINGMAN_LOG);
   const includeText = env.WINGMAN_LOG_TEXT === "1";

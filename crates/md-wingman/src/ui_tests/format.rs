@@ -4,7 +4,7 @@
 use gpui_kit::{Action, ClipboardItem, TestAppContext};
 
 use super::*;
-use crate::format::{context_menu_entries, MenuEntry};
+use crate::format::{MenuEntry, context_menu_entries};
 use crate::workspace::ViewMode;
 
 fn dispatch(h: &Harness, cx: &mut TestAppContext, action: impl Action) {

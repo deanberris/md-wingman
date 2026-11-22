@@ -10,6 +10,7 @@ mod dictation;
 mod document;
 mod findings;
 mod format;
+mod guide;
 mod jev;
 mod logging;
 mod prefilter;
@@ -74,6 +75,7 @@ actions!(
         ShowCrashReports,
         ReportProblem,
         ToggleVerboseLogging,
+        MarkdownGuide,
         About,
         CloseAbout,
         Quit
@@ -112,6 +114,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new(key!("="), IncreaseFontSize, None),
         KeyBinding::new(key!("-"), DecreaseFontSize, None),
         KeyBinding::new(key!("0"), ResetFontSize, None),
+        KeyBinding::new(key!("/"), MarkdownGuide, None),
         KeyBinding::new(key!("q"), Quit, None),
     ]);
 }
@@ -181,6 +184,8 @@ fn main() {
                     MenuItem::action("Setup…", ShowSetup),
                 ]),
                 Menu::new("Help").items([
+                    MenuItem::action("Markdown Guide", MarkdownGuide),
+                    MenuItem::separator(),
                     MenuItem::action("Report a Problem…", ReportProblem),
                     MenuItem::separator(),
                     MenuItem::action("Show Log File", ShowLogFile),

@@ -8,11 +8,11 @@
 // WINGMAN_AUTH picks the sign-in mode: subscription (default), api_key, or
 // provider for another Anthropic-compatible endpoint (see auth.ts).
 
-import { authModeFromEnv, providerFromEnv, type AuthMode, type Provider } from "./auth";
+import { type AuthMode, authModeFromEnv, type Provider, providerFromEnv } from "./auth";
+import { resolveClaudePath } from "./claudePath";
+import { log } from "./log";
 import { fakeRunner, makeAgentRunner, type Runner } from "./runner";
 import { SERVICE_VERSION, startServer } from "./server";
-import { log } from "./log";
-import { resolveClaudePath } from "./claudePath";
 
 function argValue(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -79,7 +79,9 @@ process.on("uncaughtException", (err) => {
   log.fatal(`wingman-service crashed: ${err.stack ?? err}`);
   process.exit(1);
 });
-process.on("unhandledRejection", (err) => log.error(`unhandled rejection: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`));
+process.on("unhandledRejection", (err) =>
+  log.error(`unhandled rejection: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`),
+);
 
 // If the app dies without stopping us, our stdin closes: exit too, so no
 // orphaned service is left running.

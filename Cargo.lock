@@ -6799,6 +6799,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "style-check"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

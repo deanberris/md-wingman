@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { NO_TOKEN, authModeFromEnv, claudeEnv, providerFromEnv } from "./auth";
+import { authModeFromEnv, claudeEnv, NO_TOKEN, providerFromEnv } from "./auth";
 
 const env = {
   PATH: "/usr/bin",
@@ -60,7 +60,11 @@ test("provider mode reads the endpoint and model", () => {
     fastModel: undefined,
     webSearch: true,
   });
-  const local = providerFromEnv({ WINGMAN_PROVIDER_URL: "http://localhost:11434", WINGMAN_MODEL: "qwen3", WINGMAN_WEB_SEARCH: "0" });
+  const local = providerFromEnv({
+    WINGMAN_PROVIDER_URL: "http://localhost:11434",
+    WINGMAN_MODEL: "qwen3",
+    WINGMAN_WEB_SEARCH: "0",
+  });
   expect(local.name).toBe("localhost:11434");
   expect(local.token).toBeUndefined();
   expect(local.webSearch).toBe(false);
@@ -90,7 +94,11 @@ test("provider mode points Claude Code at the provider, with none of the Claude 
 });
 
 test("a provider without a token still never gets the Claude login", () => {
-  const local = { WINGMAN_PROVIDER_URL: "http://localhost:11434", WINGMAN_MODEL: "qwen3", WINGMAN_FAST_MODEL: "qwen3:4b" };
+  const local = {
+    WINGMAN_PROVIDER_URL: "http://localhost:11434",
+    WINGMAN_MODEL: "qwen3",
+    WINGMAN_FAST_MODEL: "qwen3:4b",
+  };
   const out = claudeEnv("provider", { ...env, ...local }, providerFromEnv(local));
   expect(out.ANTHROPIC_AUTH_TOKEN).toBe(NO_TOKEN);
   expect(out.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();

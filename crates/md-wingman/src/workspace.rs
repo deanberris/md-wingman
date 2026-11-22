@@ -7,15 +7,15 @@ use std::sync::Arc;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{EditorState, InputEvent};
 use gpui_kit::component::resizable::{
-    h_resizable, resizable_panel, ResizablePanelEvent, ResizableState,
+    ResizablePanelEvent, ResizableState, h_resizable, resizable_panel,
 };
 use gpui_kit::component::text::TextView;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::assistant::{auth_mode_from_env, Assistant, Connection, ServiceStatus};
-use crate::document::{word_count, Document};
+use crate::assistant::{Assistant, Connection, ServiceStatus, auth_mode_from_env};
+use crate::document::{Document, word_count};
 use crate::jev::{Grader, Jev};
 use crate::settings::Settings;
 use crate::{NewFile, Open, Save, SaveAs, TogglePreview};
@@ -100,6 +100,8 @@ pub struct Workspace {
     pub(crate) key_input: Option<Entity<gpui_kit::component::input::InputState>>,
     /// The appearance panel's font choices, while it's open.
     pub(crate) font_choices: Option<crate::appearance::FontChoices>,
+    /// The Markdown quick reference is open in the Assistant pane.
+    pub(crate) show_guide: bool,
     pub(crate) grader: Arc<dyn Grader>,
     /// The setup wizard, while it's open.
     pub(crate) setup: Option<crate::setup::SetupWizard>,
@@ -200,6 +202,7 @@ impl Workspace {
             review: Default::default(),
             key_input: None,
             font_choices: None,
+            show_guide: false,
             grader: services.grader,
             setup: None,
             probe: services.probe,
@@ -773,6 +776,15 @@ impl Workspace {
                     .text_color(theme.muted_foreground)
                     .child(div().flex_1().child("Assistant"))
                     .child(
+                        Button::new("markdown-guide")
+                            .label("?")
+                            .xsmall()
+                            .ghost()
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.on_markdown_guide(&crate::MarkdownGuide, window, cx)
+                            })),
+                    )
+                    .child(
                         Button::new("appearance-panel")
                             .label("Aa")
                             .xsmall()
@@ -837,6 +849,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_show_log_file))
             .on_action(cx.listener(Self::on_show_crash_reports))
             .on_action(cx.listener(Self::on_report_problem))
+            .on_action(cx.listener(Self::on_markdown_guide))
             .on_action(cx.listener(Self::on_toggle_verbose_logging))
             .size_full()
             .bg(background)

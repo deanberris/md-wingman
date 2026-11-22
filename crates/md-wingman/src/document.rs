@@ -53,7 +53,7 @@ impl Document {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "document has no path yet",
-                ))
+                ));
             }
         };
         let tmp = path.with_extension(format!(

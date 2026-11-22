@@ -1,0 +1,9 @@
+# Clippy settings for the lints turned on in Cargo.toml's [workspace.lints].
+
+# How deep blocks may nest before `excessive_nesting` complains. It counts
+# every block, closures included, so gpui's element builders reach 5 without
+# any real branching. This is a backstop; the control-flow limit that keeps
+# `if`s flat is crates/style-check (max 3 levels of if/match/loop).
+excessive-nesting-threshold = 6
+
+cognitive-complexity-threshold = 25

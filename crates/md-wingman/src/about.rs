@@ -5,7 +5,7 @@
 //! the way of writing. Asking again while it's open brings the same window
 //! to the front.
 
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
+use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::*;
 
 use crate::{About, CloseAbout};
@@ -98,13 +98,12 @@ pub fn window(cx: &App) -> Option<AnyWindowHandle> {
 
 /// Opens the About window, or brings it to the front if it's open.
 pub fn open(cx: &mut App) {
-    if let Some(handle) = cx.default_global::<AboutWindow>().0 {
-        if cx
+    if let Some(handle) = cx.default_global::<AboutWindow>().0
+        && cx
             .update_window(handle, |_, window, _| window.activate_window())
             .is_ok()
-        {
-            return;
-        }
+    {
+        return;
     }
     let width = px(440.);
     let height = px(520.);
@@ -320,9 +319,11 @@ mod tests {
 
     #[::core::prelude::v1::test]
     fn the_repository_lists_its_maintainer() {
-        assert!(contributors()
-            .iter()
-            .any(|c| c.name == "Dean Michael Berris"));
+        assert!(
+            contributors()
+                .iter()
+                .any(|c| c.name == "Dean Michael Berris")
+        );
     }
 
     #[::core::prelude::v1::test]

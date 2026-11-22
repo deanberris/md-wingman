@@ -8,16 +8,16 @@
 //! file. The panel for all of it opens in the Assistant pane from Assistant ▸
 //! Model Provider…, and from the setup wizard. It never opens by itself.
 
+use gpui_kit::component::Theme;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::Theme;
-use gpui_kit::component::{h_flex, v_flex, Sizable as _};
+use gpui_kit::component::{Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use serde::{Deserialize, Serialize};
 
-use crate::workspace::Workspace;
 use crate::ModelProvider;
+use crate::workspace::Workspace;
 
 const KEYCHAIN_SERVICE: &str = "md-wingman";
 const KEYCHAIN_ACCOUNT: &str = "model-provider-token";
@@ -486,9 +486,11 @@ mod tests {
         assert!(provider("", "m").problem().is_some());
         assert!(provider("localhost:11434", "m").problem().is_some());
         assert!(provider("https://", "m").problem().is_some());
-        assert!(provider("https://openrouter.ai/api", " ")
-            .problem()
-            .is_some());
+        assert!(
+            provider("https://openrouter.ai/api", " ")
+                .problem()
+                .is_some()
+        );
     }
 
     #[test]

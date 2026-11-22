@@ -19,7 +19,10 @@ export function resolveClaudePath(env: NodeJS.ProcessEnv = process.env): string 
 
   const home = homedir();
   const candidates = [
-    ...(env.PATH ?? "").split(delimiter).filter(Boolean).map((dir) => join(dir, "claude")),
+    ...(env.PATH ?? "")
+      .split(delimiter)
+      .filter(Boolean)
+      .map((dir) => join(dir, "claude")),
     join(home, ".local/bin/claude"),
     join(home, ".claude/local/claude"),
     "/opt/homebrew/bin/claude",

@@ -31,7 +31,8 @@ export const COPY_EDIT_SCHEMA = {
         properties: {
           original: {
             type: "string",
-            description: "The exact text to replace, copied from the passage. Keep it short: just enough words to be unambiguous.",
+            description:
+              "The exact text to replace, copied from the passage. Keep it short: just enough words to be unambiguous.",
           },
           replacement: { type: "string", description: "The text to put in its place." },
           reason: { type: "string", description: "A few words on why." },
@@ -56,7 +57,10 @@ export const FACT_CHECK_SCHEMA = {
         properties: {
           quote: { type: "string", description: "The claim, quoted exactly from the passage." },
           verdict: { type: "string", enum: ["supported", "disputed", "false", "unverifiable"] },
-          explanation: { type: "string", description: "One or two sentences. For false or disputed claims, say what is correct." },
+          explanation: {
+            type: "string",
+            description: "One or two sentences. For false or disputed claims, say what is correct.",
+          },
           sources: {
             type: "array",
             items: {
@@ -87,10 +91,14 @@ export const REFERENCES_SCHEMA = {
         properties: {
           quote: {
             type: "string",
-            description: "The claim this source bears on, quoted exactly from the passage. The editor inserts the citation right after it.",
+            description:
+              "The claim this source bears on, quoted exactly from the passage. The editor inserts the citation right after it.",
           },
           title: { type: "string" },
-          authors: { type: "string", description: "Authors as they would appear in a citation, or an empty string if none." },
+          authors: {
+            type: "string",
+            description: "Authors as they would appear in a citation, or an empty string if none.",
+          },
           year: { type: "string", description: "Year of publication, or an empty string if unknown." },
           publisher: { type: "string", description: "Journal, publisher or website." },
           url: { type: "string" },

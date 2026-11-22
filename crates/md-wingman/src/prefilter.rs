@@ -1,10 +1,10 @@
 //! Turning the Jev pre-filter on and off, and the panel for the TypeSafe API
 //! key, which goes straight into the macOS Keychain.
 
+use gpui_kit::component::Theme;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::Theme;
-use gpui_kit::component::{h_flex, v_flex, Sizable as _};
+use gpui_kit::component::{Sizable as _, h_flex, v_flex};
 use gpui_kit::*;
 
 use crate::workspace::Workspace;
