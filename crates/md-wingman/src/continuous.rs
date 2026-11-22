@@ -607,24 +607,24 @@ impl Workspace {
                 self.continuous
                     .checked
                     .remove(&(kind_key(kind), fingerprint(&sent)));
-                if message != "cancelled" {
-                    // Keep trying on our own, so fixing the cause (such as
-                    // signing in to Claude) is enough to get going again.
-                    let wait = (self.continuous.run_backoff * 2).clamp(RETRY_FIRST, RETRY_MAX);
-                    self.continuous.run_backoff = wait;
-                    log::warn!(target: "continuous", "pausing checks for {wait:?} after a failure");
-                    self.set_notice(
-                        format!(
-                            "Paused checking as you write: {} Trying again in {}.",
-                            sentence(&message),
-                            seconds(wait)
-                        ),
-                        cx,
-                    );
-                    self.schedule_continuous_at(wait, cx);
-                } else {
+                if message == "cancelled" {
                     self.continuous_tick(cx);
+                    return;
                 }
+                // Keep trying on our own, so fixing the cause (such as
+                // signing in to Claude) is enough to get going again.
+                let wait = (self.continuous.run_backoff * 2).clamp(RETRY_FIRST, RETRY_MAX);
+                self.continuous.run_backoff = wait;
+                log::warn!(target: "continuous", "pausing checks for {wait:?} after a failure");
+                self.set_notice(
+                    format!(
+                        "Paused checking as you write: {} Trying again in {}.",
+                        sentence(&message),
+                        seconds(wait)
+                    ),
+                    cx,
+                );
+                self.schedule_continuous_at(wait, cx);
             }
         }
     }

@@ -110,13 +110,26 @@ stores it in their Keychain. Don't handle the key yourself.
 ## Changing the code
 
 - Rust workspace: `crates/md-wingman` (the gpui app), `crates/wingman-client`
-  (client for the service) and `crates/wingman-log` (the log file). TypeScript service in
+  (client for the service), `crates/wingman-log` (the log file) and
+  `crates/style-check` (house-style checks clippy lacks). TypeScript service in
   `service/`, on the Claude Agent SDK, compiled with Bun.
 - Before you push, run what CI runs:
   - `cargo fmt --all -- --check`
   - `cargo clippy --workspace --all-targets --locked -- -D warnings`
-  - `cargo test --workspace --locked` (includes the headless UI tests)
-  - `cd service && bun install --frozen-lockfile && bun run typecheck && bun test`
+  - `cargo test --workspace --locked` (includes the headless UI tests and the
+    control-flow depth check)
+  - `cd service && bun install --frozen-lockfile && bun run lint && bun run typecheck && bun test`
+  - `npx markdownlint-cli2@0.24.0` and `shellcheck scripts/*.sh`
+- Style: return early instead of nesting. Use `let ... else`, `?`, `return`
+  and `continue` to leave the main path flat, and let chains
+  (`if let Some(x) = y && x > 0`) instead of an `if` inside an `if let`.
+  Control flow (`if`, `match`, loops) nests at most 3 deep in a function;
+  `cargo run -p style-check` lists anything deeper. The lints are in
+  `Cargo.toml` (`[workspace.lints]`) and `clippy.toml`. The service follows
+  the same rule through Biome (`service/biome.json`); `bun run format` fixes
+  formatting.
+- Markdown wraps at 120 columns (`.markdownlint.jsonc`); tables are exempt.
+  Whitespace and line endings follow `.editorconfig`.
 - The UI must never interrupt the person while they type: no modal dialogs or
   Keychain prompts mid-typing. Assistant work happens in the background and
   shows up as marks by the text and in the sidebar.
