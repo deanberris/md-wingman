@@ -3,74 +3,137 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>md-wingman</title>
-  <meta name="description" content="A native macOS Markdown editor with a Claude writing assistant beside it, to copy-edit, fact-check and find references.">
+  <title>md-wingman · a Markdown editor with an editor beside it</title>
+  <meta name="description" content="A native macOS Markdown editor with Claude working beside the text: copy-editing, fact-checking and finding references in the background, without ever interrupting your writing.">
   <meta name="color-scheme" content="light dark">
+  <meta property="og:title" content="md-wingman">
+  <meta property="og:description" content="A Markdown editor for macOS with Claude working beside the text as copy editor, fact-checker and research editor.">
+  <meta property="og:image" content="https://md-wingman.dev/img/og.jpg">
+  <link rel="canonical" href="https://md-wingman.dev/">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="wrap">
-    <p class="prompt">$ md-wingman <span class="cursor" aria-hidden="true">▌</span></p>
+    <p class="prompt">$ md-wingman draft.md <span class="cursor" aria-hidden="true">▌</span></p>
     <h1>md-wingman</h1>
-    <p class="lede">A calm Markdown editor for macOS, with a Claude writing assistant beside the text: ready when you want a second opinion, out of the way when you don't.</p>
+    <p class="lede">A Markdown editor for macOS with an editor beside it. Claude reads along as you write and works as your copy editor, fact-checker and research editor, in the background, without ever getting in your way.</p>
     <nav>
+      <a href="#how-it-works">How it works</a>
+      <a href="#install">Install</a>
       <a href="https://github.com/deanberris/md-wingman">GitHub</a>
-      <a href="https://github.com/deanberris/md-wingman#run-it-on-a-mac">Run it on a Mac</a>
-      <a href="https://github.com/deanberris/md-wingman/issues">Issues</a>
     </nav>
   </header>
 
+  <figure class="hero">
+    <picture>
+      <source srcset="img/editor-dark.webp" media="(prefers-color-scheme: dark)">
+      <img src="img/fact-check.webp" width="2400" height="1500" alt="md-wingman with a blog post open in raw Markdown. A wrong date is shaded red and supported claims green; the Assistant pane on the right lists each fact-check with its verdict, explanation and sources.">
+    </picture>
+    <figcaption>A real fact-check on a dictated draft: “2008” should be 2004, and the sources say so.</figcaption>
+  </figure>
+
+  <section class="wrap install" id="install">
+    <h2>Install with Claude Code</h2>
+    <p>Open <a href="https://claude.com/claude-code">Claude Code</a> in a terminal on your Mac and paste this prompt. It builds md-wingman from source on your machine, asks before installing anything, and leaves signing in to you.</p>
+    <div class="prompt-box">
+      <pre id="install-prompt">Clone https://github.com/deanberris/md-wingman and build and install md-wingman on this Mac by following its AGENTS.md.</pre>
+      <button type="button" class="copy" data-copy="install-prompt">Copy</button>
+    </div>
+    <p class="aside">Prefer to do it yourself? See <a href="#get-it">other ways to install</a>.</p>
+  </section>
+
   <main class="wrap">
-    <section>
-      <h2>What it does</h2>
-      <dl>
-        <dt>Copy-edit</dt>
-        <dd>Select a passage, or put the cursor in a paragraph, and press <kbd>⌘E</kbd>. Suggested edits are underlined in the text, and you accept or dismiss each one.</dd>
-        <dt>Fact-check</dt>
-        <dd><kbd>⇧⌘C</kbd> flags claims that look doubtful, shaded by verdict, with an explanation and sources in the sidebar.</dd>
-        <dt>Find references</dt>
-        <dd><kbd>⇧⌘R</kbd> searches the web for sources that back a claim, and cites the one you pick as a footnote or an inline link.</dd>
-        <dt>Check as you write</dt>
-        <dd>Turn it on and md-wingman checks each new or changed paragraph once you pause, a paragraph at a time, in the background.</dd>
-        <dt>Review the whole post</dt>
-        <dd><kbd>⇧⌘D</kbd> reviews the whole draft at once while you keep writing.</dd>
-      </dl>
+    <section id="why">
+      <h2>Why it exists</h2>
+      <p>I write posts for my website in Markdown, and most of the first draft is dictated. Dictation is fast and it keeps my voice, but it leaves things behind: the wrong homophone, a doubled word, a sentence that runs on, a date I was sure of and shouldn't have been.</p>
+      <p>What I wanted was what a writer at a serious publication gets: a copy editor, a fact-checker and a research editor reading over their shoulder. Not a chatbot I have to stop and ask. Not a grammar plugin that underlines everything while I'm still mid-thought. Someone who reads the draft as it comes, works quietly in the background, and has notes ready when I look over.</p>
+      <p>So md-wingman is a plain, fast Markdown editor first, with Claude beside it doing that job, on my own Claude subscription.</p>
+      <p class="sig">— Dean Michael Berris</p>
     </section>
 
-    <section>
-      <h2>How it behaves</h2>
+    <section id="how-it-works">
+      <h2>How it works</h2>
+
+      <article class="step">
+        <h3><span class="n">01</span> Write, or talk</h3>
+        <p>Open a Markdown file and write, or dictate into it. The editor is plain on purpose: monospace text, a column ruler, front matter left alone. <kbd>⌘P</kbd> flips to a rendered preview when you want to see the post as readers will.</p>
+      </article>
+
+      <article class="step">
+        <h3><span class="n">02</span> Copy-edit</h3>
+        <p>Put the cursor in a paragraph and press <kbd>⌘E</kbd>. Suggested edits are underlined right in the text and listed in the Assistant pane, each with a reason. Accept or dismiss them one at a time, or all at once; either way it's one step that <kbd>⌘Z</kbd> takes back.</p>
+        <figure class="media"><video autoplay loop muted playsinline poster="img/copy-edit.webp" src="img/copy-edit.mp4" aria-label="Pressing Command-E on a paragraph: suggestions stream into the Assistant pane and are underlined in the text; accepting one changes the text."></video><figcaption>⌘E on a dictated paragraph, then accepting the fix for a doubled “the”. Real Claude output; the waits are sped up.</figcaption></figure>
+      </article>
+
+      <article class="step">
+        <h3><span class="n">03</span> Fact-check</h3>
+        <p><kbd>⇧⌘C</kbd> checks the claims in a passage against the web. Each claim is shaded by verdict in the text, with an explanation and its sources in the pane. Click a card to jump to its claim.</p>
+        <figure class="media"><video autoplay loop muted playsinline poster="img/fact-check.webp" src="img/fact-check.mp4" aria-label="Fact-checking a paragraph: a wrong date is shaded and the Assistant pane explains the correct date with sources."></video><figcaption>⇧⌘C catches the wrong year, and clicking the card jumps to the claim. Waits sped up.</figcaption></figure>
+      </article>
+
+      <article class="step">
+        <h3><span class="n">04</span> Find references</h3>
+        <p><kbd>⇧⌘R</kbd> finds sources that back a claim, or challenge it. Cite the one you pick as a footnote, with the full citation added at the end of the post, or as an inline link.</p>
+        <figure class="media"><img src="img/references.webp" width="2400" height="1500" loading="lazy" alt="Reference cards in the Assistant pane, each with buttons to cite it as a footnote or as a link."></figure>
+      </article>
+
+      <article class="step">
+        <h3><span class="n">05</span> Or let it check as you write</h3>
+        <p>Turn on <strong>As you write</strong> (<kbd>⇧⌘K</kbd>) and md-wingman checks each new or changed paragraph once you pause. It never takes the focus, never opens a dialog, never stops you mid-sentence: findings just appear by the text and in the pane. With the optional <a href="https://docs.typesafe.ai">Jev</a> pre-filter, a cheap scoring model grades each paragraph first, and Claude is only asked about the ones that need it.</p>
+        <figure class="media"><video autoplay loop muted playsinline poster="img/as-you-write.webp" src="img/as-you-write.mp4" aria-label="Typing a new sentence; after a pause the slip in it is underlined while typing carries on uninterrupted."></video><figcaption>Typing on with “As you write” on. Jev grades the paragraph (copy-edit 98%, fact-check 47%), so only a copy-edit runs, and both slips get flagged. Waits sped up.</figcaption></figure>
+      </article>
+
+      <article class="step">
+        <h3><span class="n">06</span> Review the whole post</h3>
+        <p>When the draft is done, <kbd>⇧⌘D</kbd> reviews the whole thing in the background while you keep working. Findings stay anchored to their text: edit around them and they follow it, delete the text and they go, undo and they come back.</p>
+      </article>
+    </section>
+
+    <section id="principles">
+      <h2>What it won't do</h2>
       <ul>
-        <li><strong>It never interrupts your typing.</strong> All the work happens in the background. Findings appear as marks by the text and as cards in the Assistant pane.</li>
-        <li><strong>Findings stay with their text.</strong> Edit around them and they follow it. Delete the text and they go, and undo brings them back.</li>
-        <li><strong>Raw or preview.</strong> <kbd>⌘P</kbd> switches between the Markdown and a rendered preview.</li>
-        <li><strong>Your own Claude account.</strong> A small local service makes the model calls with the Claude Agent SDK, using your Claude subscription login by default.</li>
+        <li><strong>Interrupt you.</strong> No modal prompts, no popovers while you type, no stealing focus. Everything happens in the background.</li>
+        <li><strong>Rewrite your post.</strong> Every change is a suggestion you accept or don't.</li>
+        <li><strong>Lock up your writing.</strong> It's a plain Markdown file on your disk. Fact-checks are kept beside it, never inside it.</li>
+        <li><strong>Need another subscription.</strong> It runs through Claude Code with your own Claude plan. An API key works too, if you'd rather.</li>
       </ul>
     </section>
 
-    <section>
-      <h2>How it's built</h2>
-<pre class="diagram" aria-label="The Rust app sends requests over a Unix socket to the assistant service, which calls Claude and streams replies back.">
+    <section id="get-it">
+      <h2>Other ways to install</h2>
+      <p>md-wingman is early: version 0.1, macOS only, built in the open. The first time it opens, a short setup in the Assistant pane checks that Claude Code is installed and signed in, and gives you the command if it isn't.</p>
+      <figure class="media narrow"><img src="img/setup.webp" width="1221" height="1030" loading="lazy" alt="The setup steps in the Assistant pane: Claude Code installed and signed in, and an optional Jev pre-filter step."></figure>
+      <p>Build it from source on your Mac (you need Rust, Bun, Xcode's command-line tools and Claude Code):</p>
+<pre><code>git clone https://github.com/deanberris/md-wingman
+cd md-wingman
+scripts/install.sh</code></pre>
+      <p>Unsigned early-adopter builds are on the <a href="https://github.com/deanberris/md-wingman/releases">releases page</a>. The <a href="https://github.com/deanberris/md-wingman#run-it-on-a-mac">README</a> has every step.</p>
+    </section>
+
+    <section id="inside">
+      <h2>Under the hood</h2>
+<pre class="diagram" aria-label="The Rust app sends requests over a Unix socket to a local assistant service, which calls Claude and streams replies back.">
 ┌──────────────────────┐  requests   ┌──────────────────────┐
 │ md-wingman           │ ──────────▶ │ assistant service    │
 │ Rust · gpui          │             │ Claude Agent SDK     │
 │ editor and sidebar   │ ◀────────── │ TypeScript · Bun     │
 └──────────────────────┘   replies   └──────────────────────┘
 </pre>
-      <p>A native app written in Rust with <a href="https://gpui.rs">gpui</a>, talking over a local Unix socket to an assistant service that ships inside the app. The <a href="https://github.com/deanberris/md-wingman/blob/main/docs/architecture.md">architecture notes</a> have the details.</p>
-    </section>
-
-    <section>
-      <h2>Get it</h2>
-      <p>md-wingman is in early development. Unsigned builds for early adopters, when there are any, are on the <a href="https://github.com/deanberris/md-wingman/releases">releases page</a>; the <a href="https://github.com/deanberris/md-wingman#download-a-build-unsigned-for-early-adopters">README</a> explains how to open and verify them. To build it from source instead you need Rust, Bun, Xcode's command-line tools and Claude Code, signed in:</p>
-<pre><code>git clone https://github.com/deanberris/md-wingman
-cd md-wingman
-scripts/dev.sh notes/draft.md</code></pre>
-      <p>The <a href="https://github.com/deanberris/md-wingman#run-it-on-a-mac">README</a> walks through each step.</p>
+      <p>A native app in Rust, built with <a href="https://gpui.rs">gpui</a>, talking over a local socket to a small assistant service that ships inside the app and makes the Claude calls with the Claude Agent SDK. The <a href="https://github.com/deanberris/md-wingman/blob/main/docs/architecture.md">architecture notes</a> have the details.</p>
     </section>
   </main>
 
   <footer class="wrap">
-    <p>Open source under the <a href="https://github.com/deanberris/md-wingman/blob/main/LICENSE">Apache License 2.0</a>. Made by <a href="https://github.com/deanberris/md-wingman/blob/main/CONTRIBUTORS.md">its contributors</a>.</p>
+    <p>Open source under the <a href="https://github.com/deanberris/md-wingman/blob/main/LICENSE">Apache License 2.0</a>. Made by <a href="https://github.com/deanberris/md-wingman/blob/main/CONTRIBUTORS.md">its contributors</a>. Not affiliated with Anthropic.</p>
   </footer>
+  <script>
+    document.querySelectorAll('button.copy').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var text = document.getElementById(b.dataset.copy).textContent;
+        var done = function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1800); };
+        if (navigator.clipboard) { navigator.clipboard.writeText(text).then(done, function () {}); }
+      });
+    });
+  </script>
 </body>
 </html>
