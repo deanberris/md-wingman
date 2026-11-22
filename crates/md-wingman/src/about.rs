@@ -1,5 +1,6 @@
 //! The About window: the version, who made the app, its license, and links
-//! to the project on GitHub and its website.
+//! to the project on GitHub, its website and the maintainer's GitHub Sponsors
+//! page.
 //!
 //! It opens only from the app menu, never on its own, so it can't get in
 //! the way of writing. Asking again while it's open brings the same window
@@ -19,6 +20,8 @@ pub const WEBSITE: &str = "https://md-wingman.dev/";
 /// The license, by name and in full.
 pub const LICENSE_NAME: &str = "Apache License 2.0";
 pub const LICENSE_URL: &str = "https://github.com/deanberris/md-wingman/blob/main/LICENSE";
+/// Where people can sponsor the project's maintainer on GitHub.
+pub const SPONSOR: &str = "https://github.com/sponsors/deanberris";
 
 /// The repository's contributors list, which the window shows.
 const CONTRIBUTORS_MD: &str = include_str!("../../../CONTRIBUTORS.md");
@@ -284,6 +287,11 @@ impl Render for AboutView {
                         "about-github",
                         format!("GitHub · {}", display_url(REPOSITORY)),
                         REPOSITORY,
+                    ))
+                    .child(link(
+                        "about-sponsor",
+                        format!("Sponsor · {}", display_url(SPONSOR)),
+                        SPONSOR,
                     )),
             )
     }
@@ -330,5 +338,6 @@ mod tests {
     fn links_point_at_the_project() {
         assert_eq!(REPOSITORY, "https://github.com/deanberris/md-wingman");
         assert_eq!(display_url(WEBSITE), "md-wingman.dev");
+        assert_eq!(display_url(SPONSOR), "github.com/sponsors/deanberris");
     }
 }
