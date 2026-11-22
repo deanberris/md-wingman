@@ -6,6 +6,8 @@ use std::process::Command;
 use futures::channel::mpsc;
 use wingman_client::{AuthMode, Client, Event, Service, ServiceInfo, TaskKind};
 
+use crate::provider::ProviderSettings;
+
 /// Where the assistant service is, from the app's point of view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceStatus {
@@ -35,13 +37,15 @@ impl Assistant {
 
     /// Starts the service and does the handshake. Blocks for up to a few
     /// seconds, so call it off the UI thread.
-    pub fn start(auth: AuthMode) -> Result<Assistant, String> {
+    pub fn start(connection: Connection) -> Result<Assistant, String> {
         let exe = locate_service().ok_or_else(|| {
             "Couldn't find wingman-service. Build it with `cd service && bun run build`, \
              or set WINGMAN_SERVICE to its path."
                 .to_string()
         })?;
-        let service = Service::spawn(Command::new(&exe), auth)
+        let mut command = Command::new(&exe);
+        let auth = connection.configure(&mut command);
+        let service = Service::spawn(command, auth)
             .map_err(|e| format!("Couldn't start {}: {e}", exe.display()))?;
         let client = service
             .connect()
@@ -134,12 +138,58 @@ pub fn locate_service() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
-/// The sign-in mode the app starts the service with: subscription unless
-/// `WINGMAN_AUTH=api_key`.
-pub fn auth_mode_from_env() -> AuthMode {
-    match std::env::var("WINGMAN_AUTH").as_deref() {
-        Ok("api_key") | Ok("api-key") => AuthMode::ApiKey,
-        _ => AuthMode::Subscription,
+/// How the service reaches a model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Connection {
+    /// Claude Code as it is: the Claude plan, or whatever `WINGMAN_AUTH`
+    /// and the other `WINGMAN_*` variables in the environment say.
+    Claude(AuthMode),
+    /// The model provider from the settings, with its token from the
+    /// Keychain.
+    Provider {
+        settings: ProviderSettings,
+        token: Option<String>,
+    },
+}
+
+impl Connection {
+    /// Sets the service's environment for this connection, and returns the
+    /// mode to start it in.
+    pub fn configure(&self, command: &mut Command) -> AuthMode {
+        match self {
+            Connection::Claude(auth) => *auth,
+            Connection::Provider { settings, token } => {
+                command
+                    .env("WINGMAN_PROVIDER_NAME", settings.display_name())
+                    .env("WINGMAN_PROVIDER_URL", settings.base_url.trim())
+                    .env("WINGMAN_MODEL", settings.model.trim())
+                    .env(
+                        "WINGMAN_WEB_SEARCH",
+                        if settings.web_search { "1" } else { "0" },
+                    )
+                    .env_remove("WINGMAN_PROVIDER_TOKEN")
+                    .env_remove("WINGMAN_FAST_MODEL");
+                if !settings.fast_model.trim().is_empty() {
+                    command.env("WINGMAN_FAST_MODEL", settings.fast_model.trim());
+                }
+                if let Some(token) = token.as_deref().filter(|t| !t.is_empty()) {
+                    command.env("WINGMAN_PROVIDER_TOKEN", token);
+                }
+                AuthMode::Provider
+            }
+        }
+    }
+}
+
+/// The sign-in mode `WINGMAN_AUTH` asks for, if it's set. It wins over the
+/// settings, for development and for anyone who'd rather configure it in
+/// the environment.
+pub fn auth_mode_from_env() -> Option<AuthMode> {
+    match std::env::var("WINGMAN_AUTH").ok()?.trim() {
+        "api_key" | "api-key" => Some(AuthMode::ApiKey),
+        "provider" => Some(AuthMode::Provider),
+        "subscription" => Some(AuthMode::Subscription),
+        _ => None,
     }
 }
 
@@ -150,6 +200,11 @@ impl ServiceStatus {
             ServiceStatus::Ready(info) => match info.auth {
                 AuthMode::Subscription => "Assistant ready · Claude subscription".into(),
                 AuthMode::ApiKey => "Assistant ready · API key".into(),
+                AuthMode::Provider => format!(
+                    "Assistant ready · {} · {}",
+                    info.provider.as_deref().unwrap_or("model provider"),
+                    info.model.as_deref().unwrap_or("default model")
+                ),
             },
             ServiceStatus::Failed(_) => "Assistant unavailable".into(),
         }
@@ -161,5 +216,82 @@ pub fn task_title(task: TaskKind) -> &'static str {
         TaskKind::CopyEdit => "Copy-edit",
         TaskKind::FactCheck => "Fact-check",
         TaskKind::FindReferences => "References",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Connection;
+    use crate::provider::ProviderSettings;
+    use std::process::Command;
+    use wingman_client::AuthMode;
+
+    fn env_of(command: &Command, name: &str) -> Option<Option<String>> {
+        command
+            .get_envs()
+            .find(|(k, _)| *k == name)
+            .map(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+    }
+
+    #[test]
+    fn a_provider_is_passed_to_the_service_in_its_environment() {
+        let mut command = Command::new("wingman-service");
+        let connection = Connection::Provider {
+            settings: ProviderSettings {
+                enabled: true,
+                name: String::new(),
+                base_url: "http://localhost:11434".into(),
+                model: "qwen3".into(),
+                fast_model: String::new(),
+                web_search: false,
+            },
+            token: None,
+        };
+        assert_eq!(connection.configure(&mut command), AuthMode::Provider);
+        let env = |name| env_of(&command, name);
+        assert_eq!(
+            env("WINGMAN_PROVIDER_NAME"),
+            Some(Some("localhost:11434".into()))
+        );
+        assert_eq!(
+            env("WINGMAN_PROVIDER_URL"),
+            Some(Some("http://localhost:11434".into()))
+        );
+        assert_eq!(env("WINGMAN_MODEL"), Some(Some("qwen3".into())));
+        assert_eq!(env("WINGMAN_WEB_SEARCH"), Some(Some("0".into())));
+        // No token: none is passed, not even one from the app's environment.
+        assert_eq!(env("WINGMAN_PROVIDER_TOKEN"), Some(None));
+        assert_eq!(env("WINGMAN_FAST_MODEL"), Some(None));
+
+        let mut command = Command::new("wingman-service");
+        let Connection::Provider { settings, .. } = connection else {
+            unreachable!()
+        };
+        let connection = Connection::Provider {
+            settings: ProviderSettings {
+                fast_model: "qwen3:4b".into(),
+                ..settings
+            },
+            token: Some("tok".into()),
+        };
+        connection.configure(&mut command);
+        assert_eq!(
+            env_of(&command, "WINGMAN_PROVIDER_TOKEN"),
+            Some(Some("tok".into()))
+        );
+        assert_eq!(
+            env_of(&command, "WINGMAN_FAST_MODEL"),
+            Some(Some("qwen3:4b".into()))
+        );
+    }
+
+    #[test]
+    fn claude_leaves_the_environment_alone() {
+        let mut command = Command::new("wingman-service");
+        assert_eq!(
+            Connection::Claude(AuthMode::ApiKey).configure(&mut command),
+            AuthMode::ApiKey
+        );
+        assert_eq!(command.get_envs().count(), 0);
     }
 }

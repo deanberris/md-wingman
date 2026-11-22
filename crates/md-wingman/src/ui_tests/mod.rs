@@ -11,6 +11,7 @@ mod assistant;
 mod continuous;
 mod contract;
 mod findings;
+mod provider;
 mod quit;
 mod review;
 mod setup;
@@ -29,8 +30,9 @@ use gpui_kit::{
 use serde_json::{json, Value};
 use wingman_client::{AuthMode, Event, ServiceInfo, TaskKind};
 
-use crate::assistant::{Assistant, Backend, RunningTask};
+use crate::assistant::{Assistant, Backend, Connection, RunningTask};
 use crate::jev::{Grader, Grades, JevError};
+use crate::provider::TokenStore;
 use crate::settings::Settings;
 use crate::setup::{ClaudeStatus, SetupProbe};
 use crate::workspace::{Services, Workspace};
@@ -309,6 +311,37 @@ impl SetupProbe for FakeProbe {
     }
 }
 
+/// A stand-in for the Keychain entry with the model provider's token.
+#[derive(Default)]
+pub struct FakeTokens {
+    token: Mutex<Option<String>>,
+    pub reads: AtomicUsize,
+}
+
+impl FakeTokens {
+    pub fn stored(&self) -> Option<String> {
+        self.token.lock().unwrap().clone()
+    }
+    pub fn reads(&self) -> usize {
+        self.reads.load(Ordering::SeqCst)
+    }
+}
+
+impl TokenStore for FakeTokens {
+    fn load(&self) -> Result<Option<String>, String> {
+        self.reads.fetch_add(1, Ordering::SeqCst);
+        Ok(self.stored())
+    }
+    fn store(&self, token: &str) -> Result<(), String> {
+        *self.token.lock().unwrap() = Some(token.to_string());
+        Ok(())
+    }
+    fn clear(&self) -> Result<(), String> {
+        *self.token.lock().unwrap() = None;
+        Ok(())
+    }
+}
+
 /// Signed in, as most tests want.
 pub fn signed_in() -> ClaudeStatus {
     ClaudeStatus::SignedIn {
@@ -324,6 +357,9 @@ pub struct Harness {
     pub assistant: FakeAssistant,
     pub jev: Arc<FakeJev>,
     pub probe: Arc<FakeProbe>,
+    pub tokens: Arc<FakeTokens>,
+    /// What the assistant was started with, each time, in order.
+    pub connections: Arc<Mutex<Vec<Connection>>>,
 }
 
 pub struct Setup {
@@ -340,6 +376,8 @@ pub struct Setup {
     pub first_run: bool,
     /// What the setup wizard finds.
     pub claude: ClaudeStatus,
+    /// The model provider's token in the "Keychain".
+    pub provider_token: Option<&'static str>,
 }
 
 impl Default for Setup {
@@ -353,6 +391,7 @@ impl Default for Setup {
             width: 1600.,
             first_run: false,
             claude: signed_in(),
+            provider_token: None,
         }
     }
 }
@@ -366,19 +405,38 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
     let probe = FakeProbe::new(setup.claude.clone());
     let mut settings = setup.settings;
     settings.setup_done = !setup.first_run;
-    let backend = assistant.backend();
     let failure = setup.assistant_fails;
+    let tokens = Arc::new(FakeTokens::default());
+    if let Some(token) = setup.provider_token {
+        tokens.store(token).unwrap();
+    }
+    let connections: Arc<Mutex<Vec<Connection>>> = Arc::default();
     let services = Services {
-        start_assistant: Box::new(move || match failure {
-            Some(message) => Err(message.to_string()),
-            None => Ok(Assistant::new(
-                backend,
-                ServiceInfo {
-                    version: "test".into(),
-                    auth: AuthMode::Subscription,
-                },
-            )),
-        }),
+        start_assistant: {
+            let (assistant, connections) = (assistant.clone(), connections.clone());
+            Arc::new(move |connection| {
+                connections.lock().unwrap().push(connection.clone());
+                if let Some(message) = failure {
+                    return Err(message.to_string());
+                }
+                let info = match connection {
+                    Connection::Claude(auth) => ServiceInfo {
+                        version: "test".into(),
+                        auth,
+                        provider: None,
+                        model: None,
+                    },
+                    Connection::Provider { settings, .. } => ServiceInfo {
+                        version: "test".into(),
+                        auth: AuthMode::Provider,
+                        provider: Some(settings.display_name()),
+                        model: Some(settings.model),
+                    },
+                };
+                Ok(Assistant::new(assistant.backend(), info))
+            })
+        },
+        tokens: tokens.clone(),
         grader: jev.clone(),
         settings: Some(settings),
         persist_settings: false,
@@ -419,6 +477,8 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
         assistant,
         jev,
         probe,
+        tokens,
+        connections,
     };
     // Let the assistant "start".
     cx.run_until_parked();

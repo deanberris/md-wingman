@@ -72,9 +72,27 @@ scripts/dev.sh                  # an empty document
 scripts/dev.sh notes/draft.md   # or open a file
 ```
 
-The first time it opens, md-wingman shows a short setup in the Assistant pane. It checks that Claude Code is installed and signed in (`claude auth status`), and if not, gives you the command to install it or to sign in (`claude auth login`). Copy a command into Terminal yourself, or press **Run in Terminal** and md-wingman opens a Terminal window running it. It checks again every few seconds, so it notices once you've signed in. The second step, setting up the Jev pre-filter, is optional and can be skipped. Setup never takes the focus from the editor, so you can start writing straight away. It comes back at the next launch until Claude Code is signed in, and you can reopen it any time from Assistant ▸ Setup….
+The first time it opens, md-wingman shows a short setup in the Assistant pane. It checks that Claude Code is installed and signed in (`claude auth status`), and if not, gives you the command to install it or to sign in (`claude auth login`), or lets you use [another model](#other-models-openrouter-ollama-lm-studio) instead. Copy a command into Terminal yourself, or press **Run in Terminal** and md-wingman opens a Terminal window running it. It checks again every few seconds, so it notices once you've signed in. The second step, setting up the Jev pre-filter, is optional and can be skipped. Setup never takes the focus from the editor, so you can start writing straight away. It comes back at the next launch until Claude Code is signed in, and you can reopen it any time from Assistant ▸ Setup….
 
 The first build takes a few minutes. md-wingman uses your Claude subscription by default and ignores any `ANTHROPIC_API_KEY` in your environment. To use an API key instead, run `WINGMAN_AUTH=api_key scripts/dev.sh`. The status bar shows which one is in use.
+
+### Other models: OpenRouter, Ollama, LM Studio
+
+md-wingman can also use a model that isn't Claude, through any service that speaks Anthropic's Messages API. Claude Code still runs the tasks; it just sends its requests there instead. Open **Assistant ▸ Model Provider…** (or **Use another model provider…** in setup), pick a preset or fill in your own, and press **Save and use**:
+
+| | base URL | token | model, for example |
+|---|---|---|---|
+| [OpenRouter](https://openrouter.ai/docs/guides/guides/claude-code-integration) | `https://openrouter.ai/api` | an OpenRouter API key | `moonshotai/kimi-k2` |
+| [Ollama](https://docs.ollama.com/api/anthropic-compatibility) 0.14 or later, on this Mac | `http://localhost:11434` | none | `qwen3:14b` (pull it first) |
+| LM Studio's local server | `http://localhost:1234` | none | the loaded model's identifier |
+
+- The token is kept in your macOS Keychain, not in the settings file. Your Claude sign-in is never sent to the provider: md-wingman always gives Claude Code the provider's token, or a placeholder when there is none, so it can't fall back to your Claude login.
+- **Fast model** is what Claude Code uses for its quick background calls, such as reading a fetched page. Leave it empty to use the main model.
+- **Web search** is off by default, because most providers don't run Anthropic's server-side search tool. Without it, fact-checks and references work from what the model knows and from pages it fetches, and say so. Turn it on only if your provider supports it.
+- How good the suggestions are depends on the model. Small local models often struggle with the structured replies md-wingman asks for.
+- Saving restarts the assistant on the new provider; anything it was working on is cancelled. **Use Claude instead** switches back and keeps the provider's settings for next time.
+
+Without the app's settings, the same can be set in the environment: `WINGMAN_AUTH=provider WINGMAN_PROVIDER_URL=http://localhost:11434 WINGMAN_MODEL=qwen3:14b scripts/dev.sh`, plus `WINGMAN_PROVIDER_TOKEN`, `WINGMAN_PROVIDER_NAME`, `WINGMAN_FAST_MODEL` and `WINGMAN_WEB_SEARCH=1` as needed. `WINGMAN_AUTH` wins over the settings.
 
 ### Install it as an app
 

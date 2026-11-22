@@ -23,6 +23,10 @@ pub enum AuthMode {
     /// `ANTHROPIC_API_KEY`, billed to the Claude API. Subscription tokens in
     /// the environment are ignored.
     ApiKey,
+    /// Another Anthropic-compatible endpoint, such as OpenRouter or a local
+    /// model server, set with the `WINGMAN_PROVIDER_*` variables. No Claude
+    /// credential is passed on to it.
+    Provider,
 }
 
 impl AuthMode {
@@ -31,6 +35,7 @@ impl AuthMode {
         match self {
             AuthMode::Subscription => "subscription",
             AuthMode::ApiKey => "api_key",
+            AuthMode::Provider => "provider",
         }
     }
 }
@@ -65,6 +70,11 @@ pub enum Event {
         protocol: u32,
         version: String,
         auth: AuthMode,
+        /// In provider mode: the provider's name and the model in use.
+        #[serde(default)]
+        provider: Option<String>,
+        #[serde(default)]
+        model: Option<String>,
     },
     /// A piece of the reply, to append to what has arrived so far.
     Delta {

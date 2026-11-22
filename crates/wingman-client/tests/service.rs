@@ -13,6 +13,10 @@ fn fake_service() -> Option<Service> {
 }
 
 fn fake_service_with(auth: AuthMode) -> Option<Service> {
+    fake_service_env(auth, &[])
+}
+
+fn fake_service_env(auth: AuthMode, env: &[(&str, &str)]) -> Option<Service> {
     if Command::new("bun").arg("--version").output().is_err() {
         eprintln!("bun not installed; skipping");
         return None;
@@ -21,7 +25,8 @@ fn fake_service_with(auth: AuthMode) -> Option<Service> {
     let mut cmd = Command::new("bun");
     cmd.current_dir(dir)
         .args(["run", "src/main.ts"])
-        .env("WINGMAN_FAKE", "1");
+        .env("WINGMAN_FAKE", "1")
+        .envs(env.iter().copied());
     Some(Service::spawn(cmd, auth).expect("service starts"))
 }
 
@@ -89,6 +94,24 @@ fn reports_api_key_mode() {
     };
     let info = service.connect().unwrap().hello().unwrap();
     assert_eq!(info.auth, AuthMode::ApiKey);
+}
+
+#[test]
+fn reports_the_model_provider() {
+    let Some(service) = fake_service_env(
+        AuthMode::Provider,
+        &[
+            ("WINGMAN_PROVIDER_URL", "http://localhost:11434"),
+            ("WINGMAN_PROVIDER_NAME", "Ollama"),
+            ("WINGMAN_MODEL", "qwen3"),
+        ],
+    ) else {
+        return;
+    };
+    let info = service.connect().unwrap().hello().unwrap();
+    assert_eq!(info.auth, AuthMode::Provider);
+    assert_eq!(info.provider.as_deref(), Some("Ollama"));
+    assert_eq!(info.model.as_deref(), Some("qwen3"));
 }
 
 #[test]

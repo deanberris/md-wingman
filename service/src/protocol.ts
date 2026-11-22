@@ -37,8 +37,14 @@ export type Event =
       type: "hello";
       protocol: number;
       version: string;
-      /** Which credential the service uses: the Claude plan, or an API key. */
-      auth: "subscription" | "api_key";
+      /**
+       * Which credential the service uses: the Claude plan, an API key, or
+       * another model provider.
+       */
+      auth: "subscription" | "api_key" | "provider";
+      /** In "provider" mode: the provider's name and the model in use. */
+      provider?: string;
+      model?: string;
     }
   | { id: string; type: "delta"; text: string }
   | { id: string; type: "status"; message: string }

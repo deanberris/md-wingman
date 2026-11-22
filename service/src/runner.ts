@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, type SDKMessage, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import { claudeEnv, type AuthMode } from "./auth";
+import { claudeEnv, type AuthMode, type Provider } from "./auth";
 import { resolveClaudePath } from "./claudePath";
 import type { TaskKind } from "./protocol";
 import { TASKS, buildPrompt, type TaskSpec } from "./tasks";
@@ -37,27 +37,58 @@ function workDir(): string {
 
 /**
  * The real runner: drives Claude through the Agent SDK, which runs the user's
- * Claude Code. `auth` decides which credential Claude Code may see (see auth.ts).
+ * Claude Code. `auth` decides which credential Claude Code may see, and in
+ * "provider" mode `provider` is the endpoint and model it uses (see auth.ts).
  */
-export const makeAgentRunner = (auth: AuthMode, sdk: { query: QueryFn } = { query }, log: Logger = defaultLog): Runner => {
+export const makeAgentRunner = (
+  auth: AuthMode,
+  sdk: { query: QueryFn } = { query },
+  log: Logger = defaultLog,
+  provider?: Provider,
+): Runner => {
   // Built once, so a bad configuration fails at startup rather than per task.
-  const env = { ...claudeEnv(auth), CLAUDE_AGENT_SDK_CLIENT_APP: "md-wingman/0.1.0" };
-  return (input) => runAgent(input, env, sdk.query, log);
+  const env = { ...claudeEnv(auth, process.env, provider), CLAUDE_AGENT_SDK_CLIENT_APP: "md-wingman/0.1.0" };
+  const setup: AgentSetup = {
+    env,
+    model: provider?.model ?? (process.env.WINGMAN_MODEL || undefined),
+    webSearch: provider?.webSearch ?? true,
+    auth,
+  };
+  return (input) => runAgent(input, setup, sdk.query, log);
 };
+
+/** How every task is run, fixed when the service starts. */
+interface AgentSetup {
+  env: Record<string, string | undefined>;
+  model?: string;
+  /** False when the provider has no server-side web search tool. */
+  webSearch: boolean;
+  auth: AuthMode;
+}
+
+/** Added to a task's instructions when the endpoint can't search the web. */
+export const NO_WEB_SEARCH =
+  "Web search isn't available. Work from what you know, and fetch a page only when you know its address. Say so when a verdict or source rests on your own knowledge rather than a page you read.";
+
+/** The tools a task may use, given what the endpoint supports. */
+export function taskTools(spec: Pick<TaskSpec, "tools">, webSearch: boolean): string[] {
+  return webSearch ? spec.tools : spec.tools.filter((t) => t !== "WebSearch");
+}
 
 /** The Agent SDK's `query`. Tests pass a scripted one to `makeAgentRunner`. */
 export type QueryFn = (args: Parameters<typeof query>[0]) => AsyncIterable<SDKMessage>;
 
 async function runAgent(
   { id = "?", task, text, context, signal, onDelta, onStatus }: RunInput,
-  env: Record<string, string | undefined>,
+  { env, model, webSearch, auth }: AgentSetup,
   query: QueryFn,
   log: Logger,
 ): Promise<RunResult> {
   const spec = TASKS[task];
+  const tools = taskTools(spec, webSearch);
   const claudePath = resolveClaudePath();
   log.debug(
-    `task ${id}: Claude Code ${claudePath ?? "(bundled)"}, model ${process.env.WINGMAN_MODEL || "default"}, tools [${spec.tools.join(", ")}], max ${spec.maxTurns} turns`,
+    `task ${id}: Claude Code ${claudePath ?? "(bundled)"}, model ${model || "default"}, tools [${tools.join(", ")}], max ${spec.maxTurns} turns`,
   );
   const abortController = new AbortController();
   const onAbort = () => abortController.abort();
@@ -67,15 +98,15 @@ async function runAgent(
     const q = query({
       prompt: buildPrompt(text, context),
       options: {
-        systemPrompt: spec.systemPrompt,
-        tools: spec.tools,
-        allowedTools: spec.tools,
+        systemPrompt: webSearch || !spec.tools.includes("WebSearch") ? spec.systemPrompt : `${spec.systemPrompt}\n\n${NO_WEB_SEARCH}`,
+        tools,
+        allowedTools: tools,
         // Anything not listed above is refused instead of prompting: there is
         // no one at a terminal to answer a permission prompt.
         permissionMode: "dontAsk",
         maxTurns: spec.maxTurns,
         outputFormat: spec.schema ? { type: "json_schema", schema: spec.schema } : undefined,
-        model: process.env.WINGMAN_MODEL || undefined,
+        model,
         pathToClaudeCodeExecutable: claudePath,
         includePartialMessages: true,
         persistSession: false,
@@ -112,7 +143,7 @@ async function runAgent(
       } else if (msg.type === "result") {
         log.info(`task ${id}: ${resultSummary(msg)}`);
         if (msg.subtype === "success" && msg.is_error) log.warn(`task ${id}: Claude said: ${msg.result?.trim()}`);
-        return taskResult(msg, spec, streamed);
+        return taskResult(msg, spec, streamed, auth);
       }
     }
     if (signal.aborted) throw new Error("cancelled");
@@ -143,10 +174,15 @@ export const NOT_SIGNED_IN = `Claude isn't signed in. Open Terminal, run "claude
  * Rewrites Claude Code's errors that only make sense inside Claude Code, such
  * as "Not logged in · Please run /login", into steps the writer can follow.
  */
-export function friendlyError(message: string): string {
-  if (/not logged in|please run \/login/i.test(message)) return NOT_SIGNED_IN;
+export function friendlyError(message: string, auth: AuthMode = "subscription"): string {
+  if (/not logged in|please run \/login/i.test(message)) {
+    return auth === "provider" ? PROVIDER_REFUSED : NOT_SIGNED_IN;
+  }
   return message;
 }
+
+/** What to tell the writer when the model provider turns the token down. */
+export const PROVIDER_REFUSED = `The model provider didn't accept the token. Check it in Assistant ▸ Model Provider…, then try again.`;
 
 /**
  * Turns the SDK's result message into the task's reply, or throws with a
@@ -160,9 +196,10 @@ export function taskResult(
   msg: Pick<SDKResultMessage, "subtype" | "is_error"> & { result?: string; structured_output?: unknown },
   spec: Pick<TaskSpec, "schema">,
   streamed = "",
+  auth: AuthMode = "subscription",
 ): RunResult {
   if (msg.subtype !== "success") throw new Error(`Claude stopped early (${msg.subtype})`);
-  if (msg.is_error) throw new Error(friendlyError(msg.result?.trim() || "Claude returned an error"));
+  if (msg.is_error) throw new Error(friendlyError(msg.result?.trim() || "Claude returned an error", auth));
   if (spec.schema) {
     if (msg.structured_output === undefined) throw new Error("Claude didn't return a structured reply");
     const data = msg.structured_output as { summary?: unknown };
