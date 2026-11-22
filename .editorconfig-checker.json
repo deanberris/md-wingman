@@ -1,0 +1,7 @@
+{
+  "Exclude": ["Cargo\\.lock$", "bun\\.lock$", "LICENSE$", "\\.png$", "\\.icns$"],
+  "Disable": {
+    "IndentSize": true,
+    "MaxLineLength": true
+  }
+}
