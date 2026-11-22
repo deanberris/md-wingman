@@ -575,8 +575,8 @@ pub enum MenuEntry {
 /// What the editor's right-click menu offers, in order. Kept apart from the
 /// native menu so tests can check it without popping one up.
 pub fn context_menu_entries() -> Vec<MenuEntry> {
-    use gpui_kit::component::input::{Copy, Cut, Paste, SelectAll};
     use MenuEntry::*;
+    use gpui_kit::component::input::{Copy, Cut, Paste, SelectAll};
     vec![
         Item("Cut", Box::new(Cut)),
         Item("Copy", Box::new(Copy)),
@@ -632,14 +632,10 @@ pub fn menu_items() -> Vec<MenuItem> {
         match entry {
             MenuEntry::Item(label, action) => out.push(menu_action(label, action)),
             MenuEntry::Separator => out.push(MenuItem::separator()),
-            MenuEntry::Submenu(_, entries) => {
-                for entry in entries {
-                    out.push(match entry {
-                        MenuEntry::Item(label, action) => menu_action(label, action),
-                        _ => MenuItem::separator(),
-                    });
-                }
-            }
+            MenuEntry::Submenu(_, entries) => out.extend(entries.into_iter().map(|e| match e {
+                MenuEntry::Item(label, action) => menu_action(label, action),
+                _ => MenuItem::separator(),
+            })),
         }
     }
     // Drop the trailing separator and Select All, which Edit has.
@@ -659,7 +655,7 @@ fn menu_action(label: &str, action: Box<dyn Action>) -> MenuItem {
 
 #[cfg(test)]
 mod tests {
-    use super::{insert_link, toggle_code_block, toggle_inline, toggle_lines, Edit};
+    use super::{Edit, insert_link, toggle_code_block, toggle_inline, toggle_lines};
     use super::{Inline, LineStyle};
 
     /// Applies an edit and marks the selection with [ and ].

@@ -233,9 +233,15 @@ stays at its column whatever the font.
 
 ### Formatting
 
-Select some text and right-click to style it with Markdown in place: bold, italic, strikethrough, inline code or a link, or, from the Paragraph submenu, a heading, quote, list or code block for every line the selection touches. The Format menu has the same commands. Each one toggles, so applying it again takes it off, and each is one step for ⌘Z. With nothing selected, the word under the cursor is styled. A link uses the URL on the clipboard when there is one; otherwise `url` is selected, ready to type over.
+Select some text and right-click to style it with Markdown in place: bold, italic, strikethrough, inline code or a link,
+or, from the Paragraph submenu, a heading, quote, list or code block for every line the selection touches. The Format
+menu has the same commands. Each one toggles, so applying it again takes it off, and each is one step for ⌘Z. With
+nothing selected, the word under the cursor is styled. A link uses the URL on the clipboard when there is one; otherwise
+`url` is selected, ready to type over.
 
-Help ▸ Markdown Guide (⌘/), or the **?** at the top of the sidebar, opens a quick reference to Markdown in the sidebar: emphasis, links, images, footnotes, headings, lists, quotes, code, rules and tables, with the shortcuts that type them. It opens only when you ask, and the cursor stays in your text. ⌘/ again, or ×, puts it away.
+Help ▸ Markdown Guide (⌘/), or the **?** at the top of the sidebar, opens a quick reference to Markdown in the sidebar:
+emphasis, links, images, footnotes, headings, lists, quotes, code, rules and tables, with the shortcuts that type them.
+It opens only when you ask, and the cursor stays in your text. ⌘/ again, or ×, puts it away.
 
 ### Keys
 
