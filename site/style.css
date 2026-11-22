@@ -115,3 +115,36 @@ figcaption { font: 0.75rem var(--mono); color: var(--muted); margin-top: 0.6rem;
 h3 { font: 600 1.05rem var(--mono); margin: 0 0 0.5rem; }
 h3 .n { color: var(--muted); font-weight: 400; margin-right: 0.5rem; }
 .sig { font: 0.85rem var(--mono); color: var(--muted); }
+
+/* The install prompt: the one thing to copy, right under the hero. */
+.install { margin-top: 3rem; }
+.install h2 { margin-top: 0; }
+.prompt-box {
+  position: relative;
+  border: 1px solid var(--fg);
+  border-radius: 6px;
+  background: var(--code-bg);
+}
+.prompt-box pre {
+  margin: 0;
+  border: none;
+  background: none;
+  padding: 1rem 5.5rem 1rem 1rem;
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.prompt-box pre::before { content: "> "; color: var(--muted); }
+.copy {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  font: 600 0.75rem var(--mono);
+  color: var(--bg);
+  background: var(--fg);
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+}
+.aside { font-size: 0.9rem; color: var(--muted); }

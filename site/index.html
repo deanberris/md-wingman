@@ -19,7 +19,7 @@
     <p class="lede">A Markdown editor for macOS with an editor beside it. Claude reads along as you write and works as your copy editor, fact-checker and research editor, in the background, without ever getting in your way.</p>
     <nav>
       <a href="#how-it-works">How it works</a>
-      <a href="#get-it">Get it</a>
+      <a href="#install">Install</a>
       <a href="https://github.com/deanberris/md-wingman">GitHub</a>
     </nav>
   </header>
@@ -31,6 +31,16 @@
     </picture>
     <figcaption>A real fact-check on a dictated draft: “2008” should be 2004, and the sources say so.</figcaption>
   </figure>
+
+  <section class="wrap install" id="install">
+    <h2>Install with Claude Code</h2>
+    <p>Open <a href="https://claude.com/claude-code">Claude Code</a> in a terminal on your Mac and paste this prompt. It builds md-wingman from source on your machine, asks before installing anything, and leaves signing in to you.</p>
+    <div class="prompt-box">
+      <pre id="install-prompt">Clone https://github.com/deanberris/md-wingman and build and install md-wingman on this Mac by following its AGENTS.md.</pre>
+      <button type="button" class="copy" data-copy="install-prompt">Copy</button>
+    </div>
+    <p class="aside">Prefer to do it yourself? See <a href="#get-it">other ways to install</a>.</p>
+  </section>
 
   <main class="wrap">
     <section id="why">
@@ -90,14 +100,14 @@
     </section>
 
     <section id="get-it">
-      <h2>Get it</h2>
+      <h2>Other ways to install</h2>
       <p>md-wingman is early: version 0.1, macOS only, built in the open. The first time it opens, a short setup in the Assistant pane checks that Claude Code is installed and signed in, and gives you the command if it isn't.</p>
       <figure class="media narrow"><img src="img/setup.webp" width="1221" height="1030" loading="lazy" alt="The setup steps in the Assistant pane: Claude Code installed and signed in, and an optional Jev pre-filter step."></figure>
       <p>Build it from source on your Mac (you need Rust, Bun, Xcode's command-line tools and Claude Code):</p>
 <pre><code>git clone https://github.com/deanberris/md-wingman
 cd md-wingman
 scripts/install.sh</code></pre>
-      <p>Or open the repository in a coding agent such as Claude Code and ask it to <em>“build and install md-wingman by following AGENTS.md”</em>. Unsigned early-adopter builds are on the <a href="https://github.com/deanberris/md-wingman/releases">releases page</a>. The <a href="https://github.com/deanberris/md-wingman#run-it-on-a-mac">README</a> has every step.</p>
+      <p>Unsigned early-adopter builds are on the <a href="https://github.com/deanberris/md-wingman/releases">releases page</a>. The <a href="https://github.com/deanberris/md-wingman#run-it-on-a-mac">README</a> has every step.</p>
     </section>
 
     <section id="inside">
@@ -116,5 +126,14 @@ scripts/install.sh</code></pre>
   <footer class="wrap">
     <p>Open source under the <a href="https://github.com/deanberris/md-wingman/blob/main/LICENSE">Apache License 2.0</a>. Made by <a href="https://github.com/deanberris/md-wingman/blob/main/CONTRIBUTORS.md">its contributors</a>. Not affiliated with Anthropic.</p>
   </footer>
+  <script>
+    document.querySelectorAll('button.copy').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var text = document.getElementById(b.dataset.copy).textContent;
+        var done = function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1800); };
+        if (navigator.clipboard) { navigator.clipboard.writeText(text).then(done, function () {}); }
+      });
+    });
+  </script>
 </body>
 </html>
