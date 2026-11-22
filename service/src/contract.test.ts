@@ -207,5 +207,29 @@ test("tool use other than the reply shows as status", async () => {
     result({ structured_output: data }),
   ]);
   const events = await runTask(sdk.query, "fact_check", passage);
-  expect(events[0]).toMatchObject({ type: "status", message: "Using web_search" });
+  expect(events[0]).toMatchObject({ type: "status", message: "Searching the web" });
+});
+
+test("status counts the sources read so far", async () => {
+  const { passage, data } = fixture("find_references");
+  const tool = (index: number, name: string) =>
+    stream({
+      type: "content_block_start",
+      index,
+      content_block: { type: "tool_use", id: `t${index}`, name, input: {} },
+    });
+  const sdk = scripted([
+    tool(0, "WebSearch"),
+    tool(1, "WebFetch"),
+    tool(2, "WebFetch"),
+    tool(3, "StructuredOutput"),
+    result({ structured_output: data }),
+  ]);
+  const events = await runTask(sdk.query, "find_references", passage);
+  expect(events.slice(0, 4).map((e) => (e as { message?: string }).message)).toEqual([
+    "Searching the web",
+    "Reading source 1",
+    "Reading source 2",
+    "Writing up · 2 sources read",
+  ]);
 });
