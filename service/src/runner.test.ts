@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { NOT_SIGNED_IN, friendlyError, resultSummary, taskResult } from "./runner";
+import { friendlyError, NOT_SIGNED_IN, resultSummary, taskResult } from "./runner";
 import { COPY_EDIT_SCHEMA } from "./tasks";
 
 const schema = { schema: COPY_EDIT_SCHEMA as Record<string, unknown> };
@@ -19,7 +19,9 @@ test("other API errors pass through unchanged", () => {
 });
 
 test("an error result without text still fails clearly", () => {
-  expect(() => taskResult({ subtype: "success", is_error: true, result: "" }, schema)).toThrow("Claude returned an error");
+  expect(() => taskResult({ subtype: "success", is_error: true, result: "" }, schema)).toThrow(
+    "Claude returned an error",
+  );
 });
 
 test("a structured reply is returned with its summary", () => {
@@ -41,7 +43,9 @@ test("tasks without a schema return the text", () => {
 });
 
 test("early stops name the reason", () => {
-  expect(() => taskResult({ subtype: "error_max_turns", is_error: true }, schema)).toThrow("Claude stopped early (error_max_turns)");
+  expect(() => taskResult({ subtype: "error_max_turns", is_error: true }, schema)).toThrow(
+    "Claude stopped early (error_max_turns)",
+  );
 });
 
 test("result summaries carry time, turns, cost and tokens, not text", () => {
@@ -52,7 +56,12 @@ test("result summaries carry time, turns, cost and tokens, not text", () => {
     duration_api_ms: 3900,
     num_turns: 3,
     total_cost_usd: 0.01234,
-    usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 30, cache_creation_input_tokens: 40 } as never,
+    usage: {
+      input_tokens: 10,
+      output_tokens: 20,
+      cache_read_input_tokens: 30,
+      cache_creation_input_tokens: 40,
+    } as never,
     result: "the reply text",
   });
   expect(line).toBe(

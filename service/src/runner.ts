@@ -2,11 +2,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, type SDKMessage, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import { claudeEnv, type AuthMode } from "./auth";
+import { type AuthMode, claudeEnv } from "./auth";
 import { resolveClaudePath } from "./claudePath";
-import type { TaskKind } from "./protocol";
-import { TASKS, buildPrompt, type TaskSpec } from "./tasks";
 import { log as defaultLog, type Logger } from "./log";
+import type { TaskKind } from "./protocol";
+import { buildPrompt, TASKS, type TaskSpec } from "./tasks";
 
 export interface RunInput {
   /** The request's id, for the log. */
@@ -39,7 +39,11 @@ function workDir(): string {
  * The real runner: drives Claude through the Agent SDK, which runs the user's
  * Claude Code. `auth` decides which credential Claude Code may see (see auth.ts).
  */
-export const makeAgentRunner = (auth: AuthMode, sdk: { query: QueryFn } = { query }, log: Logger = defaultLog): Runner => {
+export const makeAgentRunner = (
+  auth: AuthMode,
+  sdk: { query: QueryFn } = { query },
+  log: Logger = defaultLog,
+): Runner => {
   // Built once, so a bad configuration fails at startup rather than per task.
   const env = { ...claudeEnv(auth), CLAUDE_AGENT_SDK_CLIENT_APP: "md-wingman/0.1.0" };
   return (input) => runAgent(input, env, sdk.query, log);
@@ -66,54 +70,20 @@ async function runAgent(
   try {
     const q = query({
       prompt: buildPrompt(text, context),
-      options: {
-        systemPrompt: spec.systemPrompt,
-        tools: spec.tools,
-        allowedTools: spec.tools,
-        // Anything not listed above is refused instead of prompting: there is
-        // no one at a terminal to answer a permission prompt.
-        permissionMode: "dontAsk",
-        maxTurns: spec.maxTurns,
-        outputFormat: spec.schema ? { type: "json_schema", schema: spec.schema } : undefined,
-        model: process.env.WINGMAN_MODEL || undefined,
-        pathToClaudeCodeExecutable: claudePath,
-        includePartialMessages: true,
-        persistSession: false,
-        // Don't pick up the user's CLAUDE.md files or project settings.
-        settingSources: [],
-        cwd: workDir(),
-        abortController,
-        env,
-        stderr: (data: string) => {
-          for (const line of data.split("\n")) if (line.trim()) log.debug(`task ${id}: claude: ${line.trim()}`);
-        },
-      },
+      options: agentOptions(spec, { id, env, claudePath, abortController, log }),
     });
 
+    const report: Reporter = { id, log, onDelta, onStatus };
     let streamed = "";
     for await (const msg of q) {
-      if (msg.type === "stream_event" && msg.parent_tool_use_id === null) {
-        const ev = msg.event;
-        if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
-          streamed += ev.delta.text;
-          onDelta(ev.delta.text);
-        } else if (ev.type === "content_block_start" && ev.content_block.type === "server_tool_use") {
-          onStatus(`Using ${ev.content_block.name}`);
-        } else if (ev.type === "content_block_start" && ev.content_block.type === "tool_use") {
-          // StructuredOutput is how the final answer is delivered, not a step to report.
-          onStatus(ev.content_block.name === "StructuredOutput" ? "Writing up" : `Using ${ev.content_block.name}`);
-        }
-      } else if (msg.type === "system" && msg.subtype === "init") {
-        log.info(`task ${id}: Claude Code ${msg.claude_code_version ?? "?"}, model ${msg.model}, credential ${msg.apiKeySource}`);
-      } else if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
-        for (const block of msg.message.content) {
-          if (block.type === "tool_use" || block.type === "server_tool_use") log.debug(`task ${id}: tool ${block.name}`);
-        }
-      } else if (msg.type === "result") {
+      if (msg.type === "result") {
         log.info(`task ${id}: ${resultSummary(msg)}`);
-        if (msg.subtype === "success" && msg.is_error) log.warn(`task ${id}: Claude said: ${msg.result?.trim()}`);
+        if (msg.subtype === "success" && msg.is_error) {
+          log.warn(`task ${id}: Claude said: ${msg.result?.trim()}`);
+        }
         return taskResult(msg, spec, streamed);
       }
+      streamed += reportMessage(msg, report);
     }
     if (signal.aborted) throw new Error("cancelled");
     log.warn(`task ${id}: the SDK ended without a result message`);
@@ -121,6 +91,96 @@ async function runAgent(
   } finally {
     signal.removeEventListener("abort", onAbort);
   }
+}
+
+type QueryOptions = NonNullable<Parameters<QueryFn>[0]["options"]>;
+
+/** The Agent SDK options for one task. */
+function agentOptions(
+  spec: TaskSpec,
+  run: {
+    id: string;
+    env: Record<string, string | undefined>;
+    claudePath: string | undefined;
+    abortController: AbortController;
+    log: Logger;
+  },
+): QueryOptions {
+  return {
+    systemPrompt: spec.systemPrompt,
+    tools: spec.tools,
+    allowedTools: spec.tools,
+    // Anything not listed above is refused instead of prompting: there is
+    // no one at a terminal to answer a permission prompt.
+    permissionMode: "dontAsk",
+    maxTurns: spec.maxTurns,
+    outputFormat: spec.schema ? { type: "json_schema", schema: spec.schema } : undefined,
+    model: process.env.WINGMAN_MODEL || undefined,
+    pathToClaudeCodeExecutable: run.claudePath,
+    includePartialMessages: true,
+    persistSession: false,
+    // Don't pick up the user's CLAUDE.md files or project settings.
+    settingSources: [],
+    cwd: workDir(),
+    abortController: run.abortController,
+    env: run.env,
+    stderr: (data: string) => {
+      for (const line of data.split("\n")) {
+        if (line.trim()) run.log.debug(`task ${run.id}: claude: ${line.trim()}`);
+      }
+    },
+  };
+}
+
+/** Where a task's progress goes while it runs. */
+interface Reporter {
+  id: string;
+  log: Logger;
+  onDelta: (text: string) => void;
+  onStatus: (message: string) => void;
+}
+
+/**
+ * Passes on what one SDK message (other than the result) says about the
+ * task's progress, and returns the reply text it streamed, if any.
+ */
+function reportMessage(msg: SDKMessage, report: Reporter): string {
+  if (msg.type === "stream_event" && msg.parent_tool_use_id === null) {
+    return reportStreamEvent(msg.event, report);
+  }
+  if (msg.type === "system" && msg.subtype === "init") {
+    report.log.info(
+      `task ${report.id}: Claude Code ${msg.claude_code_version ?? "?"}, model ${msg.model}, credential ${msg.apiKeySource}`,
+    );
+    return "";
+  }
+  if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
+    for (const block of msg.message.content) {
+      if (block.type === "tool_use" || block.type === "server_tool_use") {
+        report.log.debug(`task ${report.id}: tool ${block.name}`);
+      }
+    }
+  }
+  return "";
+}
+
+type StreamEvent = Extract<SDKMessage, { type: "stream_event" }>["event"];
+
+/** Streams reply text to `onDelta` and tool use to `onStatus`. */
+function reportStreamEvent(ev: StreamEvent, report: Reporter): string {
+  if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
+    report.onDelta(ev.delta.text);
+    return ev.delta.text;
+  }
+  if (ev.type !== "content_block_start") return "";
+  const block = ev.content_block;
+  if (block.type === "server_tool_use") {
+    report.onStatus(`Using ${block.name}`);
+  } else if (block.type === "tool_use") {
+    // StructuredOutput is how the final answer is delivered, not a step to report.
+    report.onStatus(block.name === "StructuredOutput" ? "Writing up" : `Using ${block.name}`);
+  }
+  return "";
 }
 
 /** A result message's outcome, time, turns, cost and tokens, for the log. */
