@@ -141,3 +141,19 @@ stores it in their Keychain. Don't handle the key yourself.
 - Log through the `log` macros. Never log keys or tokens, and never log
   document text directly: pass it through `wingman_log::text` (or `log.text`
   in the service), which shows only its size unless `WINGMAN_LOG_TEXT=1`.
+
+## Skills for common tasks
+
+Step-by-step guides for recurring work live in `.claude/skills/<name>/SKILL.md`. Claude Code loads them by name; other
+agents can read them as plain Markdown. Read the matching one before starting.
+
+| Skill | Use it to |
+|---|---|
+| [check](.claude/skills/check/SKILL.md) | run what CI runs before you push |
+| [code-review](.claude/skills/code-review/SKILL.md) | review a local diff or a PR (also used by `.github/workflows/claude-review.yml`) |
+| [build-and-run](.claude/skills/build-and-run/SKILL.md) | build, run or install the app on a Mac, on Dean's iMac, or in a Linux container |
+| [add-tests](.claude/skills/add-tests/SKILL.md) | add headless UI tests, unit tests, service tests and contract fixtures |
+| [cut-release](.claude/skills/cut-release/SKILL.md) | prepare a release; never push a version tag without the maintainer's OK |
+| [website-screenshots](.claude/skills/website-screenshots/SKILL.md) | change md-wingman.dev and capture screenshots of it or the app |
+| [tune-jev](.claude/skills/tune-jev/SKILL.md) | calibrate the Jev pre-filter rubrics against live grades |
+| [file-issue](.claude/skills/file-issue/SKILL.md) | file and track work in GitHub Issues |
