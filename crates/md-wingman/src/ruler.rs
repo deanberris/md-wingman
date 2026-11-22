@@ -89,6 +89,11 @@ impl Workspace {
                         Editor::new(self.editor())
                             .appearance(false)
                             .bordered(false)
+                            // Right-click: the clipboard, then Markdown styles
+                            // for the selection.
+                            .context_menu(|_, _, _| {
+                                crate::format::native_menu(crate::format::context_menu_entries())
+                            })
                             .h_full(),
                     )
                     .when_some(ruler_x.filter(|_| self.settings.show_ruler), |d, x| {
