@@ -9,6 +9,7 @@ mod continuous;
 mod dictation;
 mod document;
 mod findings;
+mod format;
 mod jev;
 mod logging;
 mod prefilter;
@@ -42,6 +43,18 @@ actions!(
         TogglePreview,
         ToggleRuler,
         Reflow,
+        Bold,
+        Italic,
+        Strikethrough,
+        InlineCode,
+        InsertLink,
+        Heading1,
+        Heading2,
+        Heading3,
+        Quote,
+        BulletedList,
+        NumberedList,
+        CodeBlock,
         CopyEdit,
         FactCheck,
         FindReferences,
@@ -89,6 +102,10 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new(key!("shift-r"), FindReferences, None),
         KeyBinding::new(key!("shift-d"), ReviewDocument, None),
         KeyBinding::new(key!("alt-q"), Reflow, None),
+        KeyBinding::new(key!("b"), Bold, None),
+        KeyBinding::new(key!("i"), Italic, None),
+        KeyBinding::new(key!("k"), InsertLink, None),
+        KeyBinding::new(key!("shift-x"), Strikethrough, None),
         KeyBinding::new(key!("shift-k"), ToggleContinuous, None),
         KeyBinding::new(key!("="), IncreaseFontSize, None),
         KeyBinding::new(key!("-"), DecreaseFontSize, None),
@@ -137,6 +154,7 @@ fn main() {
                     MenuItem::separator(),
                     MenuItem::action("Reflow Paragraph", Reflow),
                 ]),
+                Menu::new("Format").items(format::menu_items()),
                 Menu::new("View").items([
                     MenuItem::action("Toggle Preview", TogglePreview),
                     MenuItem::action("Toggle Ruler", ToggleRuler),
