@@ -34,3 +34,6 @@ objc2 = "0.6"
 tempfile = "3"
 # The headless UI test harness (`#[gpui_kit::test]`, `gpui_kit::test`).
 gpui-kit = { version = "=0.10.0", features = ["tree-sitter-markdown", "test-support"] }
+
+[lints]
+workspace = true

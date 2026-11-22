@@ -1,6 +1,7 @@
 ## Install
 
-Needs an Apple Silicon Mac, and [Claude Code](https://claude.com/claude-code) installed and signed in (`claude auth login`). md-wingman uses your own Claude subscription through it.
+Needs an Apple Silicon Mac, and [Claude Code](https://claude.com/claude-code) installed and signed in (`claude auth
+login`). md-wingman uses your own Claude subscription through it.
 
 1. Download `md-wingman-{{VERSION}}-macos-arm64.dmg` (or the `.zip`) below.
 2. Open the disk image and drag md-wingman to Applications.
@@ -10,7 +11,8 @@ This build is signed with a Developer ID and notarized by Apple.
 
 ## Verify the download
 
-Each file is attested by GitHub: the attestation proves it was built by this repository's release workflow from tag `{{TAG}}`. With the [GitHub CLI](https://cli.github.com):
+Each file is attested by GitHub: the attestation proves it was built by this repository's release workflow from tag
+`{{TAG}}`. With the [GitHub CLI](https://cli.github.com):
 
 ```sh
 gh attestation verify md-wingman-{{VERSION}}-macos-arm64.dmg --repo deanberris/md-wingman

@@ -17,18 +17,18 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::time::{Duration, Instant};
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::Theme;
-use gpui_kit::component::{h_flex, v_flex, Sizable as _};
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::{Sizable as _, h_flex, v_flex};
 use gpui_kit::*;
 use wingman_client::TaskKind;
 
+use crate::ReviewDocument;
 use crate::continuous::{fingerprint, paragraphs};
 use crate::jev::JevError;
 use crate::runs::MAX_CONTEXT_BYTES;
 use crate::suggestions::relocate;
 use crate::workspace::Workspace;
-use crate::ReviewDocument;
 
 /// How long writing must pause before Jev grades the whole document.
 pub const READINESS_PAUSE: Duration = Duration::from_secs(30);
@@ -172,10 +172,10 @@ fn next_chunk(
             }
             continue;
         }
-        if let Some(first) = current.first() {
-            if p.end - first.start > budget(kind) {
-                chunks.push(std::mem::take(&mut current));
-            }
+        if let Some(first) = current.first()
+            && p.end - first.start > budget(kind)
+        {
+            chunks.push(std::mem::take(&mut current));
         }
         current.push(p);
     }

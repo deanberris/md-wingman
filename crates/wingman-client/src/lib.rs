@@ -37,13 +37,13 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-pub use protocol::{AuthMode, Event, TaskKind, PROTOCOL_VERSION};
+pub use protocol::{AuthMode, Event, PROTOCOL_VERSION, TaskKind};
 use protocol::{Envelope, Request};
 
 /// What the service reports about itself in the handshake.
@@ -275,7 +275,7 @@ pub fn service_line(line: &str) -> ServiceLine {
                 level: log::Level::Warn,
                 fatal: false,
                 message: line.to_string(),
-            }
+            };
         }
     };
     ServiceLine {
@@ -567,7 +567,7 @@ fn event_summary(event: &Event) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{service_line, ServiceLine};
+    use super::{ServiceLine, service_line};
     use log::Level;
 
     fn line(level: Level, fatal: bool, message: &str) -> ServiceLine {

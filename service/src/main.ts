@@ -7,11 +7,11 @@
 // Set WINGMAN_FAKE=1 to answer with canned replies instead of calling Claude.
 // WINGMAN_AUTH picks the sign-in mode: subscription (default) or api_key.
 
-import { authModeFromEnv, type AuthMode } from "./auth";
+import { type AuthMode, authModeFromEnv } from "./auth";
+import { resolveClaudePath } from "./claudePath";
+import { log } from "./log";
 import { fakeRunner, makeAgentRunner, type Runner } from "./runner";
 import { SERVICE_VERSION, startServer } from "./server";
-import { log } from "./log";
-import { resolveClaudePath } from "./claudePath";
 
 function argValue(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -70,7 +70,9 @@ process.on("uncaughtException", (err) => {
   log.fatal(`wingman-service crashed: ${err.stack ?? err}`);
   process.exit(1);
 });
-process.on("unhandledRejection", (err) => log.error(`unhandled rejection: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`));
+process.on("unhandledRejection", (err) =>
+  log.error(`unhandled rejection: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`),
+);
 
 // If the app dies without stopping us, our stdin closes: exit too, so no
 // orphaned service is left running.

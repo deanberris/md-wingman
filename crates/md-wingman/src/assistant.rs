@@ -19,7 +19,7 @@ pub trait Backend: Send {
     /// Starts a task and returns its events as an async stream for the UI,
     /// with a way to cancel it.
     fn run(&self, task: TaskKind, text: &str, context: Option<&str>)
-        -> Result<RunningTask, String>;
+    -> Result<RunningTask, String>;
 }
 
 /// A connection to the assistant, and what it said about itself.

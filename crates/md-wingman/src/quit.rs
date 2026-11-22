@@ -14,8 +14,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use gpui_kit::{AnyWindowHandle, App, Global, WeakEntity};
 
-use crate::workspace::Workspace;
 use crate::Quit;
+use crate::workspace::Workspace;
 
 /// Set once the user has agreed to quit, so the platform's terminate
 /// request that follows goes through.
@@ -127,8 +127,8 @@ fn may_terminate() -> bool {
 mod macos {
     use std::sync::Mutex;
 
-    use futures::channel::mpsc;
     use futures::StreamExt as _;
+    use futures::channel::mpsc;
     use gpui_kit::App;
     use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
     use objc2::{ffi, sel};

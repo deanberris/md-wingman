@@ -360,9 +360,10 @@ fn without_a_key_it_asks_for_one_and_stops(cx: &mut TestAppContext) {
     h.wait(cx, PAUSE + 10);
     assert_eq!(h.jev.calls(), 0);
     assert_eq!(h.assistant.request_count(), 0);
-    assert!(h
-        .notice(cx)
-        .starts_with("The Jev pre-filter needs a TypeSafe API key"));
+    assert!(
+        h.notice(cx)
+            .starts_with("The Jev pre-filter needs a TypeSafe API key")
+    );
 
     // Saving a key in the panel unblocks it.
     h.update(cx, |_, window, cx| {
@@ -416,9 +417,10 @@ fn a_rejected_key_stops_grading(cx: &mut TestAppContext) {
     write_second(&h, cx, "Graded with a key that TypeSafe no longer accepts.");
     h.wait(cx, PAUSE + 10);
     assert_eq!(h.jev.calls(), 1);
-    assert!(h
-        .notice(cx)
-        .starts_with("TypeSafe didn't accept the API key"));
+    assert!(
+        h.notice(cx)
+            .starts_with("TypeSafe didn't accept the API key")
+    );
     h.cursor_at_end(cx);
     h.type_text(cx, " More.");
     h.wait(cx, PAUSE * 3);
@@ -492,9 +494,10 @@ fn a_denied_keychain_turns_jev_off_at_launch(cx: &mut TestAppContext) {
     );
     cx.run_until_parked();
     assert!(!h.read(cx, |ws, _| ws.settings.jev_prefilter));
-    assert!(h
-        .notice(cx)
-        .starts_with("Turned the Jev pre-filter off: couldn't read the TypeSafe key"));
+    assert!(
+        h.notice(cx)
+            .starts_with("Turned the Jev pre-filter off: couldn't read the TypeSafe key")
+    );
     write_second(&h, cx, "Written after the Keychain said no to the key.");
     h.wait(cx, PAUSE + 10);
     assert_eq!(h.jev.calls(), 0);

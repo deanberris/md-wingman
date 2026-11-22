@@ -156,13 +156,15 @@ mod tests {
     fn round_trips_through_a_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.json");
-        std::env::set_var("WINGMAN_SETTINGS", &path);
+        // SAFETY: no other test reads or writes this variable.
+        unsafe { std::env::set_var("WINGMAN_SETTINGS", &path) };
         let s = Settings {
             ruler_column: 100,
             ..Settings::default()
         };
         s.save().unwrap();
         assert_eq!(Settings::load().0, s);
-        std::env::remove_var("WINGMAN_SETTINGS");
+        // SAFETY: no other test reads or writes this variable.
+        unsafe { std::env::remove_var("WINGMAN_SETTINGS") };
     }
 }

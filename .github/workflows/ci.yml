@@ -18,6 +18,30 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
+  # Checks that don't need a Mac or a build: Markdown, whitespace and the
+  # shell scripts. The Rust and TypeScript lints run in the jobs below.
+  lint:
+    name: Lint (Markdown, editorconfig, shell)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Rules in .markdownlint.jsonc: lines wrap at 120 columns.
+      - name: Markdown
+        run: npx --yes markdownlint-cli2@0.24.0
+
+      - uses: editorconfig-checker/action-editorconfig-checker@v2
+
+      - name: Editorconfig
+        run: editorconfig-checker
+
+      - name: Shell scripts
+        run: shellcheck scripts/*.sh
+
   app:
     name: App (macOS, Rust)
     runs-on: macos-latest
@@ -70,6 +94,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Lint and format check
+        run: bun run lint
 
       - name: Type check
         run: bun run typecheck

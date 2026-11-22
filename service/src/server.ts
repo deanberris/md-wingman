@@ -1,9 +1,9 @@
 import { chmodSync, existsSync, unlinkSync } from "node:fs";
 import type { Socket } from "bun";
-import { PROTOCOL_VERSION, parseRequest, type Event, type Request } from "./protocol";
 import type { AuthMode } from "./auth";
+import { type Logger, silent } from "./log";
+import { type Event, PROTOCOL_VERSION, parseRequest, type Request } from "./protocol";
 import type { Runner } from "./runner";
-import { silent, type Logger } from "./log";
 
 export const SERVICE_VERSION = "0.1.0";
 
@@ -29,7 +29,7 @@ export function startServer({ socketPath, runner, auth = "subscription", log = s
   if (existsSync(socketPath)) unlinkSync(socketPath);
 
   const send = (sock: Socket<ConnState>, ev: Event) => {
-    sock.write(JSON.stringify(ev) + "\n");
+    sock.write(`${JSON.stringify(ev)}\n`);
   };
 
   const handle = (sock: Socket<ConnState>, req: Request) => {
@@ -78,12 +78,8 @@ export function startServer({ socketPath, runner, auth = "subscription", log = s
             send(sock, { id: req.id, type: "done", text, data });
           })
           .catch((err: unknown) => {
-            const message = ac.signal.aborted ? "cancelled" : err instanceof Error ? err.message : String(err);
-            if (message === "cancelled") log.info(`task ${req.id} ${req.task} cancelled after ${elapsed()}`);
-            else {
-              log.error(`task ${req.id} ${req.task} failed after ${elapsed()}: ${message}`);
-              if (err instanceof Error && err.stack) log.debug(err.stack);
-            }
+            const message = ac.signal.aborted ? "cancelled" : errorMessage(err);
+            logFailure(log, `task ${req.id} ${req.task}`, message, elapsed(), err);
             send(sock, { id: req.id, type: "error", message });
           })
           .finally(() => sock.data.inflight.delete(req.id));
@@ -101,8 +97,7 @@ export function startServer({ socketPath, runner, auth = "subscription", log = s
       },
       data(sock, chunk) {
         sock.data.buffer += chunk.toString();
-        let nl: number;
-        while ((nl = sock.data.buffer.indexOf("\n")) >= 0) {
+        for (let nl = sock.data.buffer.indexOf("\n"); nl >= 0; nl = sock.data.buffer.indexOf("\n")) {
           const line = sock.data.buffer.slice(0, nl).trim();
           sock.data.buffer = sock.data.buffer.slice(nl + 1);
           if (line === "") continue;
@@ -144,4 +139,18 @@ export function summarize(data: unknown): string {
     .filter(([, v]) => Array.isArray(v))
     .map(([k, v]) => `${(v as unknown[]).length} ${k}`);
   return parts.length ? parts.join(", ") : "structured data";
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Logs how a task ended when it didn't succeed. */
+function logFailure(log: Logger, what: string, message: string, elapsed: string, err: unknown) {
+  if (message === "cancelled") {
+    log.info(`${what} cancelled after ${elapsed}`);
+    return;
+  }
+  log.error(`${what} failed after ${elapsed}: ${message}`);
+  if (err instanceof Error && err.stack) log.debug(err.stack);
 }

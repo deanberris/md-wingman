@@ -5,19 +5,19 @@
 use std::ops::Range;
 
 use futures::StreamExt as _;
+use gpui_kit::component::Theme;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::text::TextView;
-use gpui_kit::component::Theme;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Disableable as _, Sizable as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use wingman_client::{Event, TaskKind};
 
-use crate::assistant::{task_title, ServiceStatus};
-use crate::continuous::{verdicts, CheckStatus, Verdict};
-use crate::findings::{relation_color, verdict_color, Finding, FindingKind, FindingState};
+use crate::assistant::{ServiceStatus, task_title};
+use crate::continuous::{CheckStatus, Verdict, verdicts};
+use crate::findings::{Finding, FindingKind, FindingState, relation_color, verdict_color};
 use crate::suggestions::{
-    locate_all, passage_range, CopyEditReply, FactCheckReply, ReferencesReply,
+    CopyEditReply, FactCheckReply, ReferencesReply, locate_all, passage_range,
 };
 use crate::workspace::{ViewMode, Workspace};
 use crate::{CopyEdit, FactCheck, FindReferences};
@@ -535,10 +535,11 @@ impl Workspace {
                     )),
             );
         }
-        if self.settings.continuous && self.settings.jev_prefilter {
-            if let Some(panel) = self.render_jev_report(&theme) {
-                list = list.child(panel);
-            }
+        if self.settings.continuous
+            && self.settings.jev_prefilter
+            && let Some(panel) = self.render_jev_report(&theme)
+        {
+            list = list.child(panel);
         }
         if let Some(panel) = self.render_review_panel(&theme, cx) {
             list = list.child(panel);

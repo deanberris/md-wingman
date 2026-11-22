@@ -358,10 +358,10 @@ impl log::Log for FileLogger {
             state.file = open(&self.path).ok();
             state.written = 0;
         }
-        if let Some(file) = state.file.as_mut() {
-            if file.write_all(line.as_bytes()).is_ok() {
-                state.written += line.len() as u64;
-            }
+        if let Some(file) = state.file.as_mut()
+            && file.write_all(line.as_bytes()).is_ok()
+        {
+            state.written += line.len() as u64;
         }
     }
 

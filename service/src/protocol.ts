@@ -9,11 +9,7 @@ export const PROTOCOL_VERSION = 1;
 
 export type TaskKind = "copy_edit" | "fact_check" | "find_references";
 
-export const TASK_KINDS: readonly TaskKind[] = [
-  "copy_edit",
-  "fact_check",
-  "find_references",
-];
+export const TASK_KINDS: readonly TaskKind[] = ["copy_edit", "fact_check", "find_references"];
 
 /** App -> service */
 export type Request =
@@ -70,13 +66,16 @@ export function parseRequest(line: string): Request | { error: string; id?: stri
     case "cancel":
       if (typeof v.target !== "string") return { id, error: "cancel needs a target id" };
       return { id, type: "cancel", target: v.target };
-    case "task": {
-      if (!TASK_KINDS.includes(v.task as TaskKind)) return { id, error: `unknown task: ${String(v.task)}` };
-      if (typeof v.text !== "string" || v.text.trim() === "") return { id, error: "task needs non-empty text" };
-      if (v.context !== undefined && typeof v.context !== "string") return { id, error: "context must be a string" };
-      return { id, type: "task", task: v.task as TaskKind, text: v.text, context: v.context as string | undefined };
-    }
+    case "task":
+      return parseTask(id, v);
     default:
       return { id, error: `unknown request type: ${String(v.type)}` };
   }
+}
+
+function parseTask(id: string, v: Record<string, unknown>): Request | { error: string; id: string } {
+  if (!TASK_KINDS.includes(v.task as TaskKind)) return { id, error: `unknown task: ${String(v.task)}` };
+  if (typeof v.text !== "string" || v.text.trim() === "") return { id, error: "task needs non-empty text" };
+  if (v.context !== undefined && typeof v.context !== "string") return { id, error: "context must be a string" };
+  return { id, type: "task", task: v.task as TaskKind, text: v.text, context: v.context as string | undefined };
 }

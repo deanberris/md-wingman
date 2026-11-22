@@ -192,11 +192,7 @@ pub fn footnote_citation(text: &str, at: usize, reference: &Reference) -> (usize
     // Keep footnote definitions together when the document already ends with one.
     let last_line = text.trim_end().lines().last().unwrap_or("");
     let separator = if last_line.starts_with("[^") {
-        if text.ends_with('\n') {
-            ""
-        } else {
-            "\n"
-        }
+        if text.ends_with('\n') { "" } else { "\n" }
     } else {
         separator
     };

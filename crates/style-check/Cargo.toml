@@ -1,0 +1,15 @@
+[package]
+name = "style-check"
+description = "House-style checks clippy doesn't have, such as how deeply control flow nests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+
+[lints]
+workspace = true

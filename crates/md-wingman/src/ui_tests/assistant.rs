@@ -41,9 +41,10 @@ fn copy_edit_from_the_sidebar_suggests_and_accepts(cx: &mut TestAppContext) {
     // Accept one: the text changes and that suggestion goes.
     let teh = h.finding_id(cx, "teh");
     h.click(cx, finding_button("accept", "run", teh));
-    assert!(h
-        .text(cx)
-        .starts_with("Their are three towers in the city."));
+    assert!(
+        h.text(cx)
+            .starts_with("Their are three towers in the city.")
+    );
     assert_eq!(h.open_findings(cx), vec!["Their are"]);
 
     // Dismiss the other: the text stays as it is.
@@ -83,9 +84,10 @@ fn copy_edit_shortcut_sends_the_selection_and_accepts_all_as_one_undo(cx: &mut T
     );
 
     h.click(cx, ("accept-all", run));
-    assert!(h
-        .text(cx)
-        .starts_with("There are three towers in the city."));
+    assert!(
+        h.text(cx)
+            .starts_with("There are three towers in the city.")
+    );
     assert!(h.open_findings(cx).is_empty());
 
     // Both edits went in as one change: one undo takes both back, and the

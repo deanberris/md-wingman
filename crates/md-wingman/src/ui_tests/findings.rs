@@ -72,9 +72,10 @@ fn findings_follow_their_text_when_writing_above_it(cx: &mut TestAppContext) {
     // Accepting still edits the right words after the text moved.
     let their = h.finding_id(cx, "Their are");
     h.click(cx, finding_button("accept", "run", their));
-    assert!(h
-        .text(cx)
-        .starts_with("Intro. There are three towers in teh city."));
+    assert!(
+        h.text(cx)
+            .starts_with("Intro. There are three towers in teh city.")
+    );
 }
 
 #[gpui_kit::test]
@@ -111,9 +112,10 @@ fn a_claim_follows_an_edit_accepted_inside_it(cx: &mut TestAppContext) {
     let teh = h.finding_id(cx, "teh");
     h.click(cx, finding_button("accept", "run", teh));
     // The claim now quotes the corrected words, and is still shown.
-    assert!(h
-        .open_findings(cx)
-        .contains(&"three towers in the city".to_string()));
+    assert!(
+        h.open_findings(cx)
+            .contains(&"three towers in the city".to_string())
+    );
 
     // Undo the edit: the claim goes back to the old wording.
     h.press(cx, UNDO);

@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Event, TaskKind } from "./protocol";
-import { NOT_SIGNED_IN, fakeRunner, makeAgentRunner, type QueryFn } from "./runner";
+import { fakeRunner, makeAgentRunner, NOT_SIGNED_IN, type QueryFn } from "./runner";
 import { startServer } from "./server";
 import { TASKS } from "./tasks";
 
@@ -29,18 +29,8 @@ function fixture(kind: TaskKind): Fixture {
 /** Checks `value` against the subset of JSON Schema the task schemas use. */
 function violations(schema: Record<string, any>, value: unknown, path = "$"): string[] {
   switch (schema.type) {
-    case "object": {
-      if (typeof value !== "object" || value === null || Array.isArray(value)) return [`${path}: not an object`];
-      const obj = value as Record<string, unknown>;
-      const props: Record<string, any> = schema.properties ?? {};
-      const out: string[] = [];
-      for (const key of schema.required ?? []) if (!(key in obj)) out.push(`${path}.${key}: missing`);
-      for (const [key, v] of Object.entries(obj)) {
-        if (props[key]) out.push(...violations(props[key], v, `${path}.${key}`));
-        else if (schema.additionalProperties === false) out.push(`${path}.${key}: not allowed`);
-      }
-      return out;
-    }
+    case "object":
+      return objectViolations(schema, value, path);
     case "array":
       if (!Array.isArray(value)) return [`${path}: not an array`];
       return value.flatMap((v, i) => violations(schema.items, v, `${path}[${i}]`));
@@ -51,6 +41,21 @@ function violations(schema: Record<string, any>, value: unknown, path = "$"): st
     default:
       return [`${path}: unknown schema type ${schema.type}`];
   }
+}
+
+function objectViolations(schema: Record<string, any>, value: unknown, path: string): string[] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return [`${path}: not an object`];
+  const obj = value as Record<string, unknown>;
+  const props: Record<string, any> = schema.properties ?? {};
+  const out: string[] = [];
+  for (const key of schema.required ?? []) {
+    if (!(key in obj)) out.push(`${path}.${key}: missing`);
+  }
+  for (const [key, v] of Object.entries(obj)) {
+    if (props[key]) out.push(...violations(props[key], v, `${path}.${key}`));
+    else if (schema.additionalProperties === false) out.push(`${path}.${key}: not allowed`);
+  }
+  return out;
 }
 
 /** The quotes a reply's items point at in the passage. */
@@ -83,9 +88,9 @@ for (const kind of KINDS) {
 test("the checker catches a reply of the wrong shape", () => {
   const schema = TASKS.fact_check.schema!;
   expect(violations(schema, { summary: "x" })).toEqual(["$.claims: missing"]);
-  expect(violations(schema, { summary: "x", claims: [{ quote: "q", verdict: "maybe", explanation: "", sources: [] }] })).toEqual([
-    "$.claims[0].verdict: maybe not in supported,disputed,false,unverifiable",
-  ]);
+  expect(
+    violations(schema, { summary: "x", claims: [{ quote: "q", verdict: "maybe", explanation: "", sources: [] }] }),
+  ).toEqual(["$.claims[0].verdict: maybe not in supported,disputed,false,unverifiable"]);
 });
 
 // Through the runner and the server.
@@ -110,7 +115,13 @@ function scripted(messages: unknown[]): { query: QueryFn; calls: QueryArgs[] } {
 }
 
 const stream = (event: unknown) => ({ type: "stream_event", parent_tool_use_id: null, event });
-const result = (fields: Record<string, unknown>) => ({ type: "result", subtype: "success", is_error: false, result: "", ...fields });
+const result = (fields: Record<string, unknown>) => ({
+  type: "result",
+  subtype: "success",
+  is_error: false,
+  result: "",
+  ...fields,
+});
 
 /** Runs one task through a server on `query` and returns its events. */
 async function runTask(query: QueryFn, kind: TaskKind, text: string, context?: string): Promise<Event[]> {
@@ -125,8 +136,7 @@ async function runTask(query: QueryFn, kind: TaskKind, text: string, context?: s
     socket: {
       data(_s, chunk) {
         buf += chunk.toString();
-        let nl: number;
-        while ((nl = buf.indexOf("\n")) >= 0) {
+        for (let nl = buf.indexOf("\n"); nl >= 0; nl = buf.indexOf("\n")) {
           const ev = JSON.parse(buf.slice(0, nl)) as Event;
           buf = buf.slice(nl + 1);
           events.push(ev);
@@ -135,7 +145,7 @@ async function runTask(query: QueryFn, kind: TaskKind, text: string, context?: s
       },
     },
   });
-  sock.write(JSON.stringify({ id: "t", type: "task", task: kind, text, context }) + "\n");
+  sock.write(`${JSON.stringify({ id: "t", type: "task", task: kind, text, context })}\n`);
   await done;
   sock.end();
   return events;
@@ -146,7 +156,11 @@ for (const kind of KINDS) {
     const { passage, data } = fixture(kind);
     const sdk = scripted([
       stream({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Looking…" } }),
-      stream({ type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "s", name: "StructuredOutput", input: {} } }),
+      stream({
+        type: "content_block_start",
+        index: 1,
+        content_block: { type: "tool_use", id: "s", name: "StructuredOutput", input: {} },
+      }),
       result({ structured_output: data }),
     ]);
     const events = await runTask(sdk.query, kind, passage, `# Post\n\n${passage}`);
@@ -185,7 +199,11 @@ test("a run that stops early names why", async () => {
 test("tool use other than the reply shows as status", async () => {
   const { passage, data } = fixture("fact_check");
   const sdk = scripted([
-    stream({ type: "content_block_start", index: 0, content_block: { type: "server_tool_use", id: "w", name: "web_search", input: {} } }),
+    stream({
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "server_tool_use", id: "w", name: "web_search", input: {} },
+    }),
     result({ structured_output: data }),
   ]);
   const events = await runTask(sdk.query, "fact_check", passage);

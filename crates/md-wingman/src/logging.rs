@@ -3,8 +3,8 @@
 //! `wingman-log` crate for where the files are and what is kept out of them.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use gpui_kit::*;
 use wingman_log::LevelFilter;

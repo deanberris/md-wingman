@@ -1,8 +1,8 @@
 //! The ruler: a vertical guide at the configured column, soft-wrapping at it,
 //! and hard-wrapping paragraphs to it.
 
-use gpui_kit::component::input::Editor;
 use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::component::input::Editor;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 

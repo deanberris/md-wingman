@@ -14,8 +14,8 @@ use gpui_kit::*;
 
 use crate::store::{self, SavedClaim};
 use crate::suggestions::{
-    combine_edits, footnote_citation, link_citation, relocate, Claim, EditSuggestion, Insertion,
-    Reference, Relation, Verdict,
+    Claim, EditSuggestion, Insertion, Reference, Relation, Verdict, combine_edits,
+    footnote_citation, link_citation, relocate,
 };
 use crate::workspace::{ViewMode, Workspace};
 
@@ -201,14 +201,13 @@ impl Workspace {
                 .highlight
                 .as_ref()
                 .and_then(|h| h.get_ranges(cx).into_iter().next())
+                && text.get(range.clone()) == Some(f.quote.as_str())
             {
-                if text.get(range.clone()) == Some(f.quote.as_str()) {
-                    if f.anchor != range.start {
-                        f.anchor = range.start;
-                        claims_changed |= f.is_claim();
-                    }
-                    continue;
+                if f.anchor != range.start {
+                    f.anchor = range.start;
+                    claims_changed |= f.is_claim();
                 }
+                continue;
             }
             if let Some(h) = f.highlight.take() {
                 h.clear(cx);
@@ -228,23 +227,22 @@ impl Workspace {
 
             let was_live = f.live;
             let mut found = relocate(&text, &f.quote, f.anchor, REACH);
-            if found.is_none() {
-                // An edit inside a claim may have been undone.
-                if let Some((i, range)) = f
+            // An edit inside a claim may have been undone.
+            if found.is_none()
+                && let Some((i, range)) = f
                     .earlier
                     .iter()
                     .enumerate()
                     .find_map(|(i, q)| relocate(&text, q, f.anchor, REACH).map(|r| (i, r)))
-                {
-                    let quote = f.earlier.remove(i);
-                    let current = std::mem::replace(&mut f.quote, quote);
-                    f.earlier.push(current);
-                    if let FindingKind::Claim(c) = &mut f.kind {
-                        c.quote = f.quote.clone();
-                    }
-                    claims_changed = true;
-                    found = Some(range);
+            {
+                let quote = f.earlier.remove(i);
+                let current = std::mem::replace(&mut f.quote, quote);
+                f.earlier.push(current);
+                if let FindingKind::Claim(c) = &mut f.kind {
+                    c.quote = f.quote.clone();
                 }
+                claims_changed = true;
+                found = Some(range);
             }
             match found {
                 Some(range) => {
@@ -261,10 +259,10 @@ impl Workspace {
                 None => {
                     f.live = false;
                     // Its fix is where it was: the accept was redone.
-                    if let FindingKind::Edit(e) = &f.kind {
-                        if relocate(&text, &e.replacement, f.anchor, REDO_REACH).is_some() {
-                            f.state = FindingState::Accepted;
-                        }
+                    if let FindingKind::Edit(e) = &f.kind
+                        && relocate(&text, &e.replacement, f.anchor, REDO_REACH).is_some()
+                    {
+                        f.state = FindingState::Accepted;
                     }
                 }
             }
@@ -413,20 +411,22 @@ impl Workspace {
             self.reconcile_findings(cx);
             return;
         }
-        if !followers.is_empty() {
-            for (id, quote, anchor) in followers {
-                if let Some(f) = self.finding_mut(id) {
-                    let old = std::mem::replace(&mut f.quote, quote);
-                    f.earlier.push(old);
-                    f.anchor = anchor;
-                    if let FindingKind::Claim(c) = &mut f.kind {
-                        c.quote = f.quote.clone();
-                    }
-                }
-            }
-            self.reconcile_findings(cx);
-            self.save_claims(cx);
+        if followers.is_empty() {
+            return;
         }
+        for (id, quote, anchor) in followers {
+            let Some(f) = self.finding_mut(id) else {
+                continue;
+            };
+            let old = std::mem::replace(&mut f.quote, quote);
+            f.earlier.push(old);
+            f.anchor = anchor;
+            if let FindingKind::Claim(c) = &mut f.kind {
+                c.quote = f.quote.clone();
+            }
+        }
+        self.reconcile_findings(cx);
+        self.save_claims(cx);
     }
 
     /// Cites a reference after the claim it backs, as a footnote or an
