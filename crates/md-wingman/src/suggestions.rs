@@ -105,7 +105,63 @@ impl Relation {
     }
 }
 
+impl ReferencesReply {
+    /// Drops references to a page already in the list, keeping the first
+    /// (best) one. Pages match by [`normalize_url`], or by the same title
+    /// and publisher at another address.
+    pub fn dedupe(&mut self) {
+        let mut urls = std::collections::HashSet::new();
+        let mut names = std::collections::HashSet::new();
+        self.references.retain(|r| {
+            let name = format!("{}\n{}", r.title.trim(), r.publisher.trim()).to_lowercase();
+            // Both inserts run, so either key marks the page as seen.
+            let new_url = urls.insert(normalize_url(&r.url));
+            let new_name = names.insert(name);
+            new_url && new_name
+        });
+    }
+}
+
+/// A URL reduced to what names the page, so the same page found twice
+/// compares equal: no scheme, `www.` or mobile (`m.`) host prefix, fragment
+/// or trailing slash, and a lowercase host.
+pub fn normalize_url(url: &str) -> String {
+    let url = url.trim();
+    let url = url.split_once('#').map_or(url, |(before, _)| before);
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let host = host.to_ascii_lowercase();
+    let host = host.strip_prefix("www.").unwrap_or(&host);
+    let host = match host.strip_prefix("m.") {
+        Some(h) if h.contains('.') => h,
+        _ => host,
+    };
+    // Wikipedia's mobile site is `en.m.wikipedia.org`.
+    let host = host.replace(".m.wikipedia.org", ".wikipedia.org");
+    let path = path.trim_end_matches('/');
+    if path.is_empty() {
+        host
+    } else {
+        format!("{host}/{path}")
+    }
+}
+
 impl Reference {
+    /// Authors, year and publisher for under the title, each shown once:
+    /// a publisher that repeats the title or the authors is left out.
+    pub fn meta(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        let title = self.title.trim();
+        for part in [self.authors.trim(), self.year.trim(), self.publisher.trim()] {
+            let repeated = part.eq_ignore_ascii_case(title)
+                || out.iter().any(|p| p.eq_ignore_ascii_case(part));
+            if !part.is_empty() && !repeated {
+                out.push(part);
+            }
+        }
+        out
+    }
+
     /// "Doe, J. (2020). *Title*. Publisher. <url>", leaving out what's missing.
     pub fn citation(&self) -> String {
         let mut out = String::new();
@@ -119,7 +175,9 @@ impl Reference {
         }
         out.push_str(&format!("*{}*.", self.title.trim().trim_end_matches('.')));
         let publisher = self.publisher.trim();
-        if !publisher.is_empty() {
+        let repeated = publisher.eq_ignore_ascii_case(self.title.trim())
+            || publisher.eq_ignore_ascii_case(authors);
+        if !publisher.is_empty() && !repeated {
             out.push_str(&format!(" {}.", publisher.trim_end_matches('.')));
         }
         out.push_str(&format!(" <{}>", self.url.trim()));
@@ -497,5 +555,90 @@ mod tests {
         )
         .unwrap();
         assert_eq!(refs.references[0].relation, Relation::Challenges);
+    }
+
+    fn source(title: &str, authors: &str, publisher: &str, url: &str) -> Reference {
+        Reference {
+            quote: "q".into(),
+            title: title.into(),
+            authors: authors.into(),
+            year: String::new(),
+            publisher: publisher.into(),
+            url: url.into(),
+            relation: Relation::Background,
+            note: String::new(),
+        }
+    }
+
+    #[test]
+    fn the_same_page_found_twice_is_one_reference() {
+        let mut reply = ReferencesReply {
+            summary: String::new(),
+            references: vec![
+                source(
+                    "Ray Tomlinson",
+                    "",
+                    "Wikipedia",
+                    "https://en.wikipedia.org/wiki/Ray_Tomlinson",
+                ),
+                source(
+                    "Ray Tomlinson",
+                    "",
+                    "Wikipedia",
+                    "http://en.m.wikipedia.org/wiki/Ray_Tomlinson/#Life",
+                ),
+                source(
+                    "Ray Tomlinson",
+                    "",
+                    "Wikipedia",
+                    "https://en.wikipedia.org/wiki/Raymond_Tomlinson",
+                ),
+                source(
+                    "Email",
+                    "",
+                    "Wikipedia",
+                    "https://en.wikipedia.org/wiki/Email",
+                ),
+                source("Home", "", "Site", "https://www.Example.com/"),
+                source("Home", "", "Site", "https://example.com"),
+            ],
+        };
+        reply.dedupe();
+        let urls: Vec<&str> = reply.references.iter().map(|r| r.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            [
+                "https://en.wikipedia.org/wiki/Ray_Tomlinson",
+                "https://en.wikipedia.org/wiki/Email",
+                "https://www.Example.com/",
+            ]
+        );
+    }
+
+    #[test]
+    fn different_pages_on_one_site_stay_apart() {
+        assert_ne!(
+            normalize_url("https://example.com/a?id=1"),
+            normalize_url("https://example.com/a?id=2")
+        );
+        assert_eq!(normalize_url("https://m.example.com/a"), "example.com/a");
+    }
+
+    #[test]
+    fn a_publisher_that_repeats_the_title_shows_once() {
+        let same = "Centre for Computing History";
+        let r = source(same, "", same, "https://x");
+        assert!(r.meta().is_empty());
+        assert_eq!(r.citation(), format!("*{same}*. <https://x>"));
+
+        let r = source("Email history", same, same, "https://x");
+        assert_eq!(r.meta(), [same]);
+        assert_eq!(
+            r.citation(),
+            format!("{same}. *Email history*. <https://x>")
+        );
+
+        let r = source("Email history", "Doe, J.", same, "https://x");
+        assert_eq!(r.meta(), ["Doe, J.", same]);
     }
 }

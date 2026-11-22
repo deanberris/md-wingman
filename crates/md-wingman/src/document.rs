@@ -75,6 +75,43 @@ pub fn word_count(text: &str) -> usize {
     text.split_whitespace().count()
 }
 
+/// Where YAML (`---`) or TOML (`+++`) front matter at the very top of a
+/// document ends: the byte offset just past its closing fence line. `None`
+/// when the document doesn't start with front matter.
+pub fn front_matter_end(text: &str) -> Option<usize> {
+    let mut lines = text.split_inclusive('\n');
+    let first = lines.next()?;
+    let fence = first.trim_end();
+    if fence != "---" && fence != "+++" {
+        return None;
+    }
+    let mut offset = first.len();
+    for line in lines {
+        offset += line.len();
+        if line.trim_end() == fence {
+            return Some(offset);
+        }
+    }
+    None
+}
+
+/// Splits a document into its front matter (the lines between the fences,
+/// without them) and the body after it. A document without front matter is
+/// all body.
+pub fn split_front_matter(text: &str) -> (Option<&str>, &str) {
+    let Some(end) = front_matter_end(text) else {
+        return (None, text);
+    };
+    let first = text.find('\n').map_or(text.len(), |i| i + 1);
+    let inner = text[first..end].trim_end();
+    // Drop the closing fence from the inner part.
+    let inner = inner
+        .rsplit_once('\n')
+        .map_or("", |(before, _)| before)
+        .trim_end_matches('\r');
+    (Some(inner), &text[end..])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,5 +158,26 @@ mod tests {
     fn counts_words() {
         assert_eq!(word_count("  The cat\nsat.  "), 3);
         assert_eq!(word_count(""), 0);
+    }
+
+    #[test]
+    fn finds_front_matter() {
+        let text = "---\ntitle: Hi\ndate: 2026-11-21\n---\n\n# Body\n";
+        assert_eq!(front_matter_end(text), Some(35));
+        assert_eq!(
+            split_front_matter(text),
+            (Some("title: Hi\ndate: 2026-11-21"), "\n# Body\n")
+        );
+        let toml = "+++\ntitle = \"Hi\"\n+++\nBody";
+        assert_eq!(split_front_matter(toml), (Some("title = \"Hi\""), "Body"));
+        let empty = "---\n---\nBody";
+        assert_eq!(split_front_matter(empty), (Some(""), "Body"));
+    }
+
+    #[test]
+    fn a_rule_is_not_front_matter() {
+        assert_eq!(front_matter_end("Text\n---\nMore\n---\n"), None);
+        assert_eq!(front_matter_end("---\nnever closed\n"), None);
+        assert_eq!(split_front_matter("# Hi\n"), (None, "# Hi\n"));
     }
 }

@@ -124,3 +124,41 @@ fn the_jev_step_saves_the_key_and_turns_jev_on(cx: &mut TestAppContext) {
     assert!(h.read(cx, |ws, _| ws.settings.jev_prefilter));
     assert!(!h.exists(cx, "setup-jev-use"));
 }
+
+#[gpui_kit::test]
+fn the_jev_step_is_done_when_jev_is_on_with_a_key(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            jev_key: Some("ts-key"),
+            settings: Settings {
+                jev_prefilter: true,
+                ..Settings::default()
+            },
+            ..first_run(signed_in())
+        },
+    );
+    assert!(h.exists(cx, "setup-done"));
+    assert!(!h.exists(cx, "setup-jev-use"));
+}
+
+#[gpui_kit::test]
+fn a_key_saved_from_terminal_counts_once_jev_is_turned_on(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            settings: Settings {
+                jev_prefilter: true,
+                ..Settings::default()
+            },
+            ..first_run(signed_in())
+        },
+    );
+    assert!(h.exists(cx, "setup-jev-use"));
+
+    // The key is saved with the Terminal command, after md-wingman looked.
+    h.jev.store_key("ts-key").unwrap();
+    h.click(cx, "setup-jev-use");
+    assert!(h.read(cx, |ws, _| ws.key_input.is_none()));
+    assert!(!h.exists(cx, "setup-jev-use"));
+}
