@@ -180,10 +180,17 @@ impl Continuous {
         self.backoff = Duration::ZERO;
     }
 
-    /// The key, reading the Keychain only if it hasn't been read yet.
+    /// The key, reading the Keychain unless a key has already been read.
+    /// Only called when the writer asks for Jev, so it looks again when no
+    /// key was there last time: one may have been saved from Terminal since.
     pub(crate) fn key(&mut self, grader: &dyn Grader) -> Result<Option<String>, String> {
-        if self.jev_key.is_none() {
-            self.jev_key = Some(grader.load_key()?);
+        if !matches!(self.jev_key, Some(Some(_))) {
+            let key = grader.load_key()?;
+            if key.is_some() {
+                self.key_changed(key);
+            } else {
+                self.jev_key = Some(None);
+            }
         }
         Ok(self.jev_key.clone().flatten())
     }
@@ -259,23 +266,15 @@ pub fn fingerprint(text: &str) -> u64 {
 /// definitions and anything too short to check.
 pub fn paragraphs(text: &str) -> Vec<Range<usize>> {
     let mut out = Vec::new();
-    let mut offset = 0;
+    // Front matter: a `---` or `+++` block at the very top.
+    let mut offset = crate::document::front_matter_end(text).unwrap_or(0);
     let mut lines = Vec::new();
-    for line in text.split_inclusive('\n') {
+    for line in text[offset..].split_inclusive('\n') {
         lines.push((offset, line));
         offset += line.len();
     }
 
     let mut i = 0;
-    // Front matter: a `---` or `+++` block at the very top.
-    if let Some((_, first)) = lines.first() {
-        let fence = first.trim_end();
-        if (fence == "---" || fence == "+++")
-            && let Some(end) = lines[1..].iter().position(|(_, l)| l.trim_end() == fence)
-        {
-            i = end + 2;
-        }
-    }
 
     let mut block: Option<Range<usize>> = None;
     let mut fence: Option<&str> = None;

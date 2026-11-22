@@ -254,13 +254,17 @@ fn fact_checks_stay_with_the_text_after_the_card_closes(cx: &mut TestAppContext)
     assert!(h.read(cx, |ws, _| ws.run_cards()).is_empty());
     assert_eq!(h.open_findings(cx), vec!["three towers", "in teh city"]);
     let towers = h.finding_id(cx, "three towers");
+    h.cursor_at(cx, "second");
     assert!(h.exists(cx, finding_button("dismiss", "kept", towers)));
 
-    // With the cursor in a claim, it shows at the top too.
+    // With the cursor in a claim, it moves to the top, and isn't repeated
+    // in the list below.
     h.cursor_at(cx, "towers");
     assert!(h.exists(cx, finding_button("dismiss", "cursor", towers)));
+    assert!(!h.exists(cx, finding_button("dismiss", "kept", towers)));
     h.cursor_at(cx, "second");
     assert!(!h.exists(cx, finding_button("dismiss", "cursor", towers)));
+    assert!(h.exists(cx, finding_button("dismiss", "kept", towers)));
 
     // A new fact-check of the paragraph replaces the old results.
     h.cursor_at(cx, "three");

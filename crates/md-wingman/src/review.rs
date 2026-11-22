@@ -571,8 +571,63 @@ impl Workspace {
         cx.notify();
     }
 
-    /// The review's panel in the sidebar: the suggestion, the pass's
-    /// progress, or how it went.
+    /// The suggestion to review the whole document, when Jev thinks the
+    /// draft is ready. It goes below everything else in the sidebar, so it
+    /// appears without moving the cards above it.
+    pub(crate) fn render_review_suggestion(
+        &self,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.review.is_suggested() || self.review.is_running() {
+            return None;
+        }
+        let panel = || {
+            v_flex()
+                .gap_2()
+                .p_2()
+                .border_1()
+                .border_color(theme.border)
+                .rounded_md()
+                .text_xs()
+        };
+        let score = self.review.readiness().unwrap_or_default();
+        Some(
+            panel()
+                .child(div().font_weight(FontWeight::SEMIBOLD).child(format!(
+                    "This draft looks ready for a full look-over (Jev: {:.0}%)",
+                    score * 100.
+                )))
+                .child(div().text_color(theme.muted_foreground).child(
+                    "Copy-edit, fact-check and find references across the whole document, in the background.",
+                ))
+                .child(
+                    h_flex()
+                        .gap_1()
+                        .child(
+                            Button::new("review-start")
+                                .label("Review whole document")
+                                .xsmall()
+                                .primary()
+                                .on_click(cx.listener(|this, _, _, cx| this.start_review(cx))),
+                        )
+                        .child(
+                            Button::new("review-later")
+                                .label("Not now")
+                                .xsmall()
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.review.suggest = false;
+                                    cx.notify();
+                                })),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// The review's panel at the top of the sidebar: the pass's progress,
+    /// or how it went.
     pub(crate) fn render_review_panel(
         &self,
         theme: &Theme,
@@ -637,40 +692,10 @@ impl Workspace {
                     .into_any_element(),
             );
         }
+        // The suggestion to review goes at the bottom of the sidebar, in
+        // `render_review_suggestion`, so it can't push down what's being read.
         if self.review.is_suggested() {
-            let score = self.review.readiness().unwrap_or_default();
-            return Some(
-                panel()
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child(format!(
-                        "This draft looks ready for a full look-over (Jev: {:.0}%)",
-                        score * 100.
-                    )))
-                    .child(div().text_color(theme.muted_foreground).child(
-                        "Copy-edit, fact-check and find references across the whole document, in the background.",
-                    ))
-                    .child(
-                        h_flex()
-                            .gap_1()
-                            .child(
-                                Button::new("review-start")
-                                    .label("Review whole document")
-                                    .xsmall()
-                                    .primary()
-                                    .on_click(cx.listener(|this, _, _, cx| this.start_review(cx))),
-                            )
-                            .child(
-                                Button::new("review-later")
-                                    .label("Not now")
-                                    .xsmall()
-                                    .ghost()
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.review.suggest = false;
-                                        cx.notify();
-                                    })),
-                            ),
-                    )
-                    .into_any_element(),
-            );
+            return None;
         }
         let outcome = self.review.outcome()?;
         let mut summary = match outcome.findings {

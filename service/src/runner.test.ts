@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { friendlyError, NOT_SIGNED_IN, resultSummary, taskResult } from "./runner";
-import { COPY_EDIT_SCHEMA } from "./tasks";
+import { friendlyError, NOT_SIGNED_IN, resultSummary, taskResult, toolStatus } from "./runner";
+import { COPY_EDIT_SCHEMA, keepFactsInCopyEdit, TASKS } from "./tasks";
 
 const schema = { schema: COPY_EDIT_SCHEMA as Record<string, unknown> };
 
@@ -68,4 +68,37 @@ test("result summaries carry time, turns, cost and tokens, not text", () => {
     "result success in 4200ms (API 3900ms), 3 turns, $0.0123, tokens in 10, out 20, cache read 30, cache write 40",
   );
   expect(line).not.toContain("reply text");
+});
+
+test("tool status uses plain words, not tool names", () => {
+  expect(toolStatus("WebSearch")).toBe("Searching the web");
+  expect(toolStatus("web_search")).toBe("Searching the web");
+  expect(toolStatus("WebFetch")).toBe("Reading a source");
+  expect(toolStatus("StructuredOutput")).toBe("Writing up");
+  expect(toolStatus("Bash")).toBe("Working");
+});
+
+test("copy edits that change a number are left to fact-check", () => {
+  const data = {
+    summary: "Two fixes.",
+    edits: [
+      { original: "teh", replacement: "the", reason: "typo" },
+      { original: "in 2008", replacement: "in 2004", reason: "Markdown dates from 2004" },
+    ],
+  };
+  const out = taskResult(
+    { subtype: "success", is_error: false, result: "", structured_output: data },
+    TASKS.copy_edit,
+  ) as { text: string; data: { edits: unknown[] } };
+  expect(out.data.edits).toEqual([data.edits[0]]);
+  expect(out.text).toContain('Left "in 2008" as written');
+  expect(out.text).toContain("fact-check");
+});
+
+test("copy edits that keep the numbers pass through", () => {
+  const reply = {
+    summary: "",
+    edits: [{ original: "1,000 people", replacement: "1000 people", reason: "house style" }],
+  };
+  expect(keepFactsInCopyEdit(reply)).toEqual(reply);
 });

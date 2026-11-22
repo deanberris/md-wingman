@@ -73,7 +73,7 @@ async function runAgent(
       options: agentOptions(spec, { id, env, claudePath, abortController, log }),
     });
 
-    const report: Reporter = { id, log, onDelta, onStatus };
+    const report: Reporter = { id, log, onDelta, onStatus, sourcesRead: 0 };
     let streamed = "";
     for await (const msg of q) {
       if (msg.type === "result") {
@@ -138,6 +138,8 @@ interface Reporter {
   log: Logger;
   onDelta: (text: string) => void;
   onStatus: (message: string) => void;
+  /** How many pages the task has fetched so far. */
+  sourcesRead: number;
 }
 
 /**
@@ -174,13 +176,38 @@ function reportStreamEvent(ev: StreamEvent, report: Reporter): string {
   }
   if (ev.type !== "content_block_start") return "";
   const block = ev.content_block;
-  if (block.type === "server_tool_use") {
-    report.onStatus(`Using ${block.name}`);
-  } else if (block.type === "tool_use") {
-    // StructuredOutput is how the final answer is delivered, not a step to report.
-    report.onStatus(block.name === "StructuredOutput" ? "Writing up" : `Using ${block.name}`);
+  if (block.type === "server_tool_use" || block.type === "tool_use") {
+    // Count the sources read, so a long run shows it's getting somewhere.
+    const status = toolStatus(block.name);
+    if (status === "Reading a source") {
+      report.sourcesRead += 1;
+      report.onStatus(`Reading source ${report.sourcesRead}`);
+      return "";
+    }
+    const read = report.sourcesRead;
+    report.onStatus(read > 0 ? `${status} · ${read} ${read === 1 ? "source" : "sources"} read` : status);
   }
   return "";
+}
+
+/**
+ * What the writer sees while a tool runs: plain words, never the Agent SDK's
+ * tool names.
+ */
+export function toolStatus(name: string): string {
+  switch (name) {
+    // StructuredOutput is how the final answer is delivered.
+    case "StructuredOutput":
+      return "Writing up";
+    case "WebSearch":
+    case "web_search":
+      return "Searching the web";
+    case "WebFetch":
+    case "web_fetch":
+      return "Reading a source";
+    default:
+      return "Working";
+  }
 }
 
 /** A result message's outcome, time, turns, cost and tokens, for the log. */
@@ -218,15 +245,16 @@ export function friendlyError(message: string): string {
  */
 export function taskResult(
   msg: Pick<SDKResultMessage, "subtype" | "is_error"> & { result?: string; structured_output?: unknown },
-  spec: Pick<TaskSpec, "schema">,
+  spec: Pick<TaskSpec, "schema" | "tidy">,
   streamed = "",
 ): RunResult {
   if (msg.subtype !== "success") throw new Error(`Claude stopped early (${msg.subtype})`);
   if (msg.is_error) throw new Error(friendlyError(msg.result?.trim() || "Claude returned an error"));
   if (spec.schema) {
     if (msg.structured_output === undefined) throw new Error("Claude didn't return a structured reply");
-    const data = msg.structured_output as { summary?: unknown };
-    return { text: typeof data.summary === "string" ? data.summary : "", data };
+    const data = spec.tidy ? spec.tidy(msg.structured_output) : msg.structured_output;
+    const summary = (data as { summary?: unknown }).summary;
+    return { text: typeof summary === "string" ? summary : "", data };
   }
   return { text: msg.result || streamed };
 }
@@ -236,7 +264,7 @@ export function taskResult(
  * canned reply word by word. Enabled with WINGMAN_FAKE=1.
  */
 export const fakeRunner: Runner = async ({ task, text, signal, onDelta, onStatus }) => {
-  if (task !== "copy_edit") onStatus("Using WebSearch");
+  if (task !== "copy_edit") onStatus(toolStatus("WebSearch"));
   const reply = `[fake ${task}] ${text}`;
   for (const word of reply.split(/(?<= )/)) {
     if (signal.aborted) throw new Error("cancelled");

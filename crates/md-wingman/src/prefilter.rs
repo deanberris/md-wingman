@@ -80,6 +80,8 @@ impl Workspace {
                     );
                 }
                 self.continuous_tick(cx);
+                // Setup's Jev step shows whether there's a key.
+                cx.notify();
             }
             Err(e) => self.keychain_failed(e, cx),
         }
