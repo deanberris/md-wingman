@@ -4,7 +4,7 @@
 use gpui_kit::TestAppContext;
 
 use super::*;
-use crate::format::{insert_link, toggle_inline, Inline};
+use crate::format::{Inline, insert_link, toggle_inline};
 use crate::guide::SECTIONS;
 
 #[gpui_kit::test]

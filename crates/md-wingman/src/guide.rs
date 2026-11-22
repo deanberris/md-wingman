@@ -3,11 +3,11 @@
 //! asked, and never takes the focus from the editor.
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{h_flex, v_flex, Sizable as _, Theme};
+use gpui_kit::component::{Sizable as _, Theme, h_flex, v_flex};
 use gpui_kit::*;
 
-use crate::workspace::Workspace;
 use crate::MarkdownGuide;
+use crate::workspace::Workspace;
 
 /// One line of the guide: what to type, what it makes, and the shortcut
 /// that types it, if there is one.
