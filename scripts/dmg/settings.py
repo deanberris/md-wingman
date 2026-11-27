@@ -12,7 +12,8 @@ app_name = os.path.basename(app)
 
 files = [app]
 symlinks = {"Applications": "/Applications"}
-hide_extensions = [app_name]
+# No hide_extensions: it sets Finder info on the app bundle, which breaks
+# `codesign --verify --strict`. Finder hides ".app" by default anyway.
 
 format = "UDZO"
 filesystem = "HFS+"
