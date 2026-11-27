@@ -20,6 +20,7 @@
     <nav>
       <a href="#how-it-works">How it works</a>
       <a href="#install">Install</a>
+      <a href="#download">Download</a>
       <a href="https://github.com/deanberris/md-wingman">GitHub</a>
       <a href="https://github.com/sponsors/deanberris">Sponsor</a>
     </nav>
@@ -41,6 +42,10 @@
       <button type="button" class="copy" data-copy="install-prompt">Copy</button>
     </div>
     <p class="aside">Prefer to do it yourself? See <a href="#get-it">other ways to install</a>.</p>
+
+    <h2 id="download">Or download it</h2>
+    <p><a class="download" id="download-link" href="https://github.com/deanberris/md-wingman/releases">Download the latest release</a> <span class="aside" id="download-note">for Apple Silicon Macs</span></p>
+    <p class="aside">The downloads are early-adopter builds: they aren't signed with an Apple Developer ID or notarized yet, so macOS stops the app the first time you open it. Choose <strong>Done</strong>, then open <strong>System Settings ▸ Privacy &amp; Security</strong> and choose <strong>Open Anyway</strong> next to md-wingman. You do this once per version, and the app updates itself after that. The <a href="https://github.com/deanberris/md-wingman/releases">release notes</a> have every step and how to verify the download. You still need <a href="https://claude.com/claude-code">Claude Code</a> installed and signed in.</p>
   </section>
 
   <main class="wrap">
@@ -102,13 +107,13 @@
 
     <section id="get-it">
       <h2>Other ways to install</h2>
-      <p>md-wingman is early: version 0.1, macOS only, built in the open. The first time it opens, a short setup in the Assistant pane checks that Claude Code is installed and signed in, and gives you the command if it isn't.</p>
+      <p>md-wingman is early, macOS only and built in the open. The first time it opens, a short setup in the Assistant pane checks that Claude Code is installed and signed in, and gives you the command if it isn't.</p>
       <figure class="media narrow"><img src="img/setup.webp" width="1221" height="1030" loading="lazy" alt="The setup steps in the Assistant pane: Claude Code installed and signed in, and an optional Jev pre-filter step."></figure>
       <p>Build it from source on your Mac (you need Rust, Bun, Xcode's command-line tools and Claude Code):</p>
 <pre><code>git clone https://github.com/deanberris/md-wingman
 cd md-wingman
 scripts/install.sh</code></pre>
-      <p>Unsigned early-adopter builds are on the <a href="https://github.com/deanberris/md-wingman/releases">releases page</a>. The <a href="https://github.com/deanberris/md-wingman#run-it-on-a-mac">README</a> has every step.</p>
+      <p>Unsigned early-adopter builds are on the <a href="https://github.com/deanberris/md-wingman/releases">releases page</a>, and the <a href="#download">download link</a> above always points at the newest one. The <a href="https://github.com/deanberris/md-wingman#run-it-on-a-mac">README</a> has every step.</p>
     </section>
 
     <section id="inside">
@@ -136,6 +141,30 @@ scripts/install.sh</code></pre>
         if (navigator.clipboard) { navigator.clipboard.writeText(text).then(done, function () {}); }
       });
     });
+
+    // Point the download link straight at the newest release's disk image.
+    // Early releases are pre-releases, which /releases/latest skips, so ask
+    // the API for the newest release of any kind. If that fails, the link
+    // stays on the releases page.
+    (function () {
+      var link = document.getElementById('download-link');
+      var note = document.getElementById('download-note');
+      fetch('https://api.github.com/repos/deanberris/md-wingman/releases?per_page=10', {
+        headers: { Accept: 'application/vnd.github+json' }
+      }).then(function (r) { return r.ok ? r.json() : []; }).then(function (releases) {
+        for (var i = 0; i < releases.length; i++) {
+          var rel = releases[i];
+          if (rel.draft) { continue; }
+          var dmg = (rel.assets || []).filter(function (a) { return /\.dmg$/.test(a.name); })[0];
+          if (!dmg) { continue; }
+          var version = rel.tag_name.replace(/^v/, '');
+          link.href = dmg.browser_download_url;
+          link.textContent = 'Download md-wingman ' + version;
+          note.textContent = 'disk image for Apple Silicon Macs, ' + Math.round(dmg.size / 1e6) + ' MB';
+          return;
+        }
+      }).catch(function () {});
+    })();
   </script>
 </body>
 </html>

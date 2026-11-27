@@ -148,3 +148,14 @@ h3 .n { color: var(--muted); font-weight: 400; margin-right: 0.5rem; }
   cursor: pointer;
 }
 .aside { font-size: 0.9rem; color: var(--muted); }
+.download {
+  display: inline-block;
+  font: 600 0.9rem var(--mono);
+  color: var(--bg);
+  background: var(--fg);
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  margin-right: 0.5rem;
+  text-decoration: none;
+}
+.download:hover, .download:focus-visible { background: var(--accent); color: var(--bg); }
