@@ -132,7 +132,7 @@ scripts/install.sh
 
 It builds the app and the assistant service, packages them as `md-wingman.app`, signs it and copies it to
 `/Applications` (or `~/Applications` if `/Applications` isn't writable; set `WINGMAN_INSTALL_DIR` to choose). Run it
-again after `git pull` to update.
+again after `git pull` to update; the app tells you in its status bar when there's a new version.
 
 It signs with your Apple Development certificate when you have one (see [Jev pre-filter](#jev-pre-filter) for how to get
 one for free), and ad-hoc otherwise. Either way, macOS opens it without complaint: an app you build yourself isn't
@@ -179,14 +179,38 @@ hand. In practice:
 If you'd rather not approve an unsigned app, build it from source as above: an app you build yourself isn't quarantined,
 so none of this applies. Signed and notarized builds will come once the app is ready to package.
 
+### Updates
+
+Every version after 0.1.0 looks for a new release on GitHub 30 seconds after it opens and once a day after that.
+It never interrupts you: the only sign is a note at the right of the status bar.
+
+- **A downloaded build** fetches the new version in the background and checks it before keeping it: the zip must match
+  its checksum in the release's `SHA256SUMS.txt`, the app inside must pass `codesign --verify --strict --deep` and have
+  md-wingman's bundle identifier and the expected version, and once releases are signed with a Developer ID, it must be
+  signed by the same team. Then the status bar says **↑ 0.2.0 ready · restart**. The update installs when you quit, or
+  right away if you click that note or choose md-wingman ▸ Restart to Update, which asks about unsaved changes first,
+  as quitting does. Updates don't need approving in Privacy & Security, because the app downloads them itself rather
+  than through a browser, so macOS doesn't quarantine them.
+- **A build from source** (`scripts/install.sh`) doesn't replace itself with someone else's binary. The status bar says
+  **↑ 0.2.0 is out**; clicking it opens the release notes. Update with `git pull` and `scripts/install.sh`.
+- A downloaded app that runs from the disk image, or that macOS runs from a temporary copy because it was never moved
+  to Applications, can't replace itself. It says so when you check, and works normally otherwise.
+
+md-wingman ▸ Check for Updates… checks now and says what it found. md-wingman ▸ Check for Updates Automatically turns
+the daily check off or on. Set `update_prereleases` to `false` in the settings to skip releases GitHub marks as
+pre-releases, which every unsigned build is. What the updater did is in the log (`update` lines), and the installer's
+own output in `~/Library/Logs/md-wingman/update.log`. Version 0.1.0 has no updater, so
+update from it by hand once.
+
 #### Making a release
 
 Push a tag that matches the version in `Cargo.toml`, such as `v0.1.0`, or publish a release with that new tag on main
 from github.com (Releases ▸ Draft a new release). `.github/workflows/release.yml` builds the app with
-`scripts/package.sh`, makes a zip and a disk image, attests them, and publishes a pre-release with checksums and
-install notes from `.github/release-notes/`. Pull requests that change the release path run the same build without
-publishing. Once the repository has the Developer ID and notary secrets listed at the top of the workflow, releases are
-signed with Developer ID, notarized and stapled instead, with no other change.
+`scripts/package.sh`, makes a zip and a drag-to-Applications disk image (`scripts/make-dmg.sh`), attests them, and
+publishes a pre-release with checksums and install notes from `.github/release-notes/`. Pull requests that change the
+release path run the same build without publishing. Once the repository has the Developer ID and notary secrets listed
+at the top of the workflow, releases are signed with Developer ID, notarized and stapled instead, with no other change.
+Release builds are compiled with `WINGMAN_DISTRIBUTION=github-release`, which lets them install updates themselves.
 
 ### Using the assistant
 
@@ -323,7 +347,9 @@ divider, and you can edit it by hand. Missing fields take their defaults.
   "editor_font": null,
   "editor_font_size": 14,
   "preview_font": null,
-  "setup_done": false
+  "setup_done": false,
+  "check_for_updates": true,
+  "update_prereleases": true
 }
 ```
 
@@ -336,7 +362,8 @@ changes it. `continuous` turns on checking as you write.
 the web and take longer. `jev_threshold` is the grade, from 0 to 1, that a
 paragraph must score above for the pre-filter to act on it. `appearance` is
 `"system"`, `"light"` or `"dark"`. `setup_done` is set once you finish setup with Claude Code signed in, so setup stops
-opening at launch. A `null` font means the default: Menlo for
+opening at launch. `check_for_updates` and `update_prereleases` are described under [Updates](#updates). A `null` font
+means the default: Menlo for
 the editor and the system font for the preview.
 
 ### Logs

@@ -133,7 +133,7 @@ pub fn open(cx: &mut App) {
 }
 
 /// Opens a link in the browser. Tests record it instead.
-fn open_link(url: &str, cx: &mut App) {
+pub(crate) fn open_link(url: &str, cx: &mut App) {
     #[cfg(test)]
     {
         cx.default_global::<OpenedLinks>().0.push(url.to_string());

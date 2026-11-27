@@ -7,7 +7,8 @@ login`). md-wingman uses your own Claude subscription through it.
 2. Open the disk image and drag md-wingman to Applications.
 3. Open md-wingman.
 
-This build is signed with a Developer ID and notarized by Apple.
+This build is signed with a Developer ID and notarized by Apple. md-wingman downloads later versions in the background
+and installs them when you quit; a note in the status bar says when one is ready.
 
 ## Verify the download
 

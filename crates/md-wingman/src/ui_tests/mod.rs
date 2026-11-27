@@ -17,6 +17,7 @@ mod provider;
 mod quit;
 mod review;
 mod setup;
+mod update;
 mod view;
 
 use std::collections::VecDeque;
@@ -362,6 +363,7 @@ pub struct Harness {
     pub tokens: Arc<FakeTokens>,
     /// What the assistant was started with, each time, in order.
     pub connections: Arc<Mutex<Vec<Connection>>>,
+    pub updates: Arc<update::FakeUpdates>,
 }
 
 pub struct Setup {
@@ -380,6 +382,9 @@ pub struct Setup {
     pub claude: ClaudeStatus,
     /// The model provider's token in the "Keychain".
     pub provider_token: Option<&'static str>,
+    /// How this copy was built and where it runs; not an app bundle, so it
+    /// never checks for updates, unless a test says otherwise.
+    pub installation: crate::update::Installation,
 }
 
 impl Default for Setup {
@@ -394,6 +399,7 @@ impl Default for Setup {
             first_run: false,
             claude: signed_in(),
             provider_token: None,
+            installation: crate::update::Installation::Unbundled,
         }
     }
 }
@@ -413,6 +419,7 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
         tokens.store(token).unwrap();
     }
     let connections: Arc<Mutex<Vec<Connection>>> = Arc::default();
+    let updates = update::FakeUpdates::new(setup.installation);
     let services = Services {
         start_assistant: {
             let (assistant, connections) = (assistant.clone(), connections.clone());
@@ -443,6 +450,7 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
         settings: Some(settings),
         persist_settings: false,
         probe: probe.clone(),
+        updates: updates.clone(),
     };
     let text = setup.text;
     let width = setup.width;
@@ -451,6 +459,7 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
         crate::bind_keys(cx);
         crate::quit::init(cx);
         crate::about::init(cx);
+        crate::updater::init(cx);
         let bounds = Bounds {
             origin: Point::default(),
             size: size(px(width), px(1000.)),
@@ -481,6 +490,7 @@ pub fn open(cx: &mut TestAppContext, setup: Setup) -> Harness {
         probe,
         tokens,
         connections,
+        updates,
     };
     // Let the assistant "start".
     cx.run_until_parked();

@@ -25,6 +25,9 @@ dirs = "6"
 # Jev pre-filter: a small blocking HTTP client, and the macOS Keychain for its key.
 ureq = { version = "3", features = ["json"] }
 keyring = { version = "3", features = ["apple-native"] }
+# Updates: comparing release versions, and checking downloads.
+semver = "1"
+sha2 = "0.10"
 
 # Catching macOS's own requests to quit, to ask about unsaved changes.
 [target.'cfg(target_os = "macos")'.dependencies]

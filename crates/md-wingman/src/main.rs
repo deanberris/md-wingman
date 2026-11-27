@@ -26,6 +26,8 @@ mod store;
 mod suggestions;
 #[cfg(test)]
 mod ui_tests;
+mod update;
+mod updater;
 mod workspace;
 
 use std::path::PathBuf;
@@ -78,6 +80,9 @@ actions!(
         MarkdownGuide,
         About,
         CloseAbout,
+        CheckForUpdates,
+        RestartToUpdate,
+        ToggleAutoUpdate,
         Quit
     ]
 );
@@ -134,9 +139,14 @@ fn main() {
             bind_keys(cx);
             quit::init(cx);
             about::init(cx);
+            updater::init(cx);
             cx.set_menus([
                 Menu::new("md-wingman").items([
                     MenuItem::action("About md-wingman", About),
+                    MenuItem::action("Check for Updates…", CheckForUpdates),
+                    MenuItem::action("Restart to Update", RestartToUpdate),
+                    MenuItem::action("Check for Updates Automatically", ToggleAutoUpdate),
+                    MenuItem::separator(),
                     MenuItem::action("Set Up md-wingman…", ShowSetup),
                     MenuItem::separator(),
                     MenuItem::action("Quit md-wingman", Quit),
