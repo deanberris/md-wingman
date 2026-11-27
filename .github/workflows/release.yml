@@ -115,6 +115,10 @@ jobs:
 
       - name: Build, package and sign md-wingman.app
         id: package
+        env:
+          # Builds from this workflow install updates themselves; builds
+          # from source only say when there's a new version.
+          WINGMAN_DISTRIBUTION: github-release
         run: |
           app="$(scripts/package.sh | tail -n 1)"
           plutil -lint "$app/Contents/Info.plist"

@@ -111,7 +111,10 @@ stores it in their Keychain. Don't handle the key yourself.
 
 ### Updating later
 
-`git pull`, then `scripts/install.sh` again. It replaces the installed app.
+`git pull`, then `scripts/install.sh` again. It replaces the installed app. A copy built from source tells the person
+in its status bar when a new release is out, but never installs a downloaded build over itself; only builds from the
+release workflow (compiled with `WINGMAN_DISTRIBUTION=github-release`) update themselves. Don't set that variable for a
+build from source.
 
 ## Changing the code
 

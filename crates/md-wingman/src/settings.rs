@@ -49,6 +49,13 @@ pub struct Settings {
     /// Another model provider to use instead of Claude, such as OpenRouter
     /// or Ollama. Its token is kept in the Keychain.
     pub provider: crate::provider::ProviderSettings,
+    /// Look for a new version at launch and once a day. Builds from the
+    /// release workflow download it and install it on quit; builds from
+    /// source only say it's out.
+    pub check_for_updates: bool,
+    /// Also take releases GitHub marks as pre-releases, which every unsigned
+    /// build is.
+    pub update_prereleases: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +87,8 @@ impl Default for Settings {
             verbose_logging: false,
             setup_done: false,
             provider: Default::default(),
+            check_for_updates: true,
+            update_prereleases: true,
         }
     }
 }

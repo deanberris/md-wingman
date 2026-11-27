@@ -92,6 +92,7 @@ pub fn request_quit(cx: &mut App) {
             };
             if !go_on {
                 log::info!("quit cancelled");
+                cx.update(crate::updater::cancel_restart);
                 cx.update(|cx| cx.default_global::<QuitState>().asking = false);
                 return;
             }

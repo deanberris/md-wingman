@@ -41,6 +41,8 @@ shasum -a 256 -c SHA256SUMS.txt --ignore-missing
 - **Keychain prompts after updates.** If you use the Jev pre-filter, macOS asks for access to your TypeSafe key in the
   Keychain. An ad-hoc signature changes with every build, so after you update, macOS may ask again even if you chose
   Always Allow before.
-- Updating: download the new version and replace the app in Applications. You'll need to approve it in Privacy &
-  Security again.
+- **Updates.** md-wingman downloads new versions in the background, checks them against `SHA256SUMS.txt` and
+  their code signature, and installs them when you quit. A note in the status bar says when one is ready; click it to
+  restart now. You don't need to approve updates in Privacy & Security. Coming from 0.1.0, which has no updater, update
+  by hand once: download this version and replace the app in Applications.
 - Logs and crash reports are in `~/Library/Logs/md-wingman/`. Help ▸ Report a Problem… opens an issue.

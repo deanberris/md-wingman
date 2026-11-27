@@ -51,6 +51,8 @@ pub struct Services {
     pub persist_settings: bool,
     /// Looks at Claude Code for the setup wizard.
     pub probe: Arc<dyn crate::setup::SetupProbe>,
+    /// Finds and installs new versions.
+    pub updates: Arc<dyn crate::update::UpdateSource>,
 }
 
 impl Services {
@@ -62,6 +64,7 @@ impl Services {
             settings: None,
             persist_settings: true,
             probe: Arc::new(crate::setup::SystemProbe),
+            updates: Arc::new(crate::update::GitHub),
         }
     }
 }
@@ -106,6 +109,7 @@ pub struct Workspace {
     /// The setup wizard, while it's open.
     pub(crate) setup: Option<crate::setup::SetupWizard>,
     pub(crate) probe: Arc<dyn crate::setup::SetupProbe>,
+    pub(crate) updates: crate::updater::Updates,
     persist_settings: bool,
     /// A save prompt is up, before quitting or closing the window.
     asking_to_save: bool,
@@ -206,6 +210,7 @@ impl Workspace {
             grader: services.grader,
             setup: None,
             probe: services.probe,
+            updates: crate::updater::Updates::new(services.updates),
             persist_settings: services.persist_settings,
             asking_to_save: false,
             close_confirmed: false,
@@ -229,6 +234,7 @@ impl Workspace {
         }
         this.prepare_jev(cx);
         this.start_assistant(None, cx);
+        this.start_update_checks(cx);
         // First launch, or Claude Code wasn't signed in last time: show what
         // to set up, in the Assistant pane, with the editor still focused.
         if !this.settings.setup_done {
@@ -756,6 +762,7 @@ impl Workspace {
                     "As you write: on".to_string()
                 })
             })
+            .children(self.render_update_status(cx))
             .child(self.service_status.label())
     }
 
@@ -857,6 +864,9 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_report_problem))
             .on_action(cx.listener(Self::on_markdown_guide))
             .on_action(cx.listener(Self::on_toggle_verbose_logging))
+            .on_action(cx.listener(Self::on_check_for_updates))
+            .on_action(cx.listener(Self::on_restart_to_update))
+            .on_action(cx.listener(Self::on_toggle_auto_update))
             .size_full()
             .bg(background)
             .text_color(foreground)
