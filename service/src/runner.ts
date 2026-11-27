@@ -47,7 +47,7 @@ export const makeAgentRunner = (
   provider?: Provider,
 ): Runner => {
   // Built once, so a bad configuration fails at startup rather than per task.
-  const env = { ...claudeEnv(auth, process.env, provider), CLAUDE_AGENT_SDK_CLIENT_APP: "md-wingman/0.1.0" };
+  const env = { ...claudeEnv(auth, process.env, provider), CLAUDE_AGENT_SDK_CLIENT_APP: "md-wingman/0.2.0" };
   const setup: AgentSetup = {
     env,
     model: provider?.model ?? (process.env.WINGMAN_MODEL || undefined),
