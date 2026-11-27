@@ -38,6 +38,8 @@ on:
       - "scripts/package.sh"
       - "scripts/install.sh"
       - "scripts/service.entitlements"
+      - "scripts/make-dmg.sh"
+      - "scripts/dmg/**"
       - ".github/release-notes/**"
 
 permissions:
@@ -141,19 +143,12 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           name="md-wingman-$VERSION-macos-arm64"
-          mkdir -p dist dmg-root
+          mkdir -p dist
           # ditto keeps the code signature intact; plain zip can break it.
           ditto -c -k --keepParent "$APP" "dist/$name.zip"
-          ditto "$APP" dmg-root/md-wingman.app
-          ln -s /Applications dmg-root/Applications
-          # hdiutil's own size estimate for -srcfolder can come up short
-          # ("No space left on device"), so give it the size with headroom.
-          size_mb=$(( $(du -sm dmg-root | cut -f1) + 64 ))
-          hdiutil create -volname md-wingman -srcfolder dmg-root -fs HFS+ \
-            -size "${size_mb}m" -ov -format UDZO "dist/$name.dmg"
-          if [[ "$HAS_DEVELOPER_ID" == true ]]; then
-            codesign --force --sign "$WINGMAN_CODESIGN_IDENTITY" --timestamp "dist/$name.dmg"
-          fi
+          # The drag-to-Applications disk image; signed when this build has
+          # a Developer ID, and checked to mount with an app that verifies.
+          scripts/make-dmg.sh "$APP" "dist/$name.dmg"
           (cd dist && shasum -a 256 "$name.zip" "$name.dmg" >SHA256SUMS.txt && cat SHA256SUMS.txt)
 
           # The zip must unpack to an app that still verifies.
