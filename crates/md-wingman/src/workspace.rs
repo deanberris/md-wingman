@@ -9,13 +9,12 @@ use gpui_kit::component::input::{EditorState, InputEvent};
 use gpui_kit::component::resizable::{
     ResizablePanelEvent, ResizableState, h_resizable, resizable_panel,
 };
-use gpui_kit::component::text::TextView;
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::assistant::{Assistant, Connection, ServiceStatus, auth_mode_from_env};
-use crate::document::{Document, split_front_matter, word_count};
+use crate::document::{Document, word_count};
 use crate::jev::{Grader, Jev};
 use crate::settings::Settings;
 use crate::{NewFile, Open, Save, SaveAs, TogglePreview};
@@ -23,8 +22,6 @@ use crate::{NewFile, Open, Save, SaveAs, TogglePreview};
 /// The narrowest and widest the assistant pane can be dragged to.
 const SIDEBAR_MIN: f32 = 280.;
 const EDITOR_MIN: f32 = 360.;
-/// Comfortable line length for reading the preview.
-const PREVIEW_MAX_WIDTH: f32 = 720.;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -74,8 +71,7 @@ pub struct Workspace {
     editor: Entity<EditorState>,
     document: Document,
     pub(crate) mode: ViewMode,
-    /// Bumped on every edit, so the preview re-renders from fresh text.
-    revision: usize,
+    pub(crate) preview: crate::preview::Preview,
     dirty: bool,
     pub(crate) assistant: Option<Assistant>,
     pub(crate) service_status: ServiceStatus,
@@ -186,7 +182,7 @@ impl Workspace {
             editor,
             document: Document::untitled(),
             mode: ViewMode::Raw,
-            revision: 0,
+            preview: crate::preview::Preview::new(cx),
             dirty: false,
             assistant: None,
             service_status: ServiceStatus::Starting,
@@ -326,6 +322,14 @@ impl Workspace {
         cx.notify();
     }
 
+    /// The document's text changed: keep the preview up with it while it
+    /// is showing. Out of sight, it catches up when it's switched to.
+    fn document_changed(&mut self, cx: &mut Context<Self>) {
+        if self.mode == ViewMode::Preview {
+            self.sync_preview(cx);
+        }
+    }
+
     fn on_editor_event(
         &mut self,
         _: &Entity<EditorState>,
@@ -334,7 +338,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         if let InputEvent::Change = event {
-            self.revision += 1;
+            self.document_changed(cx);
             let dirty = self.document.is_dirty(&self.text(cx));
             if dirty != self.dirty {
                 self.set_dirty(dirty);
@@ -380,7 +384,7 @@ impl Workspace {
                 self.editor
                     .update(cx, |state, cx| state.set_value(text, window, cx));
                 self.set_dirty(false);
-                self.revision += 1;
+                self.document_changed(cx);
                 self.notice = None;
                 window.set_window_title(&self.title());
                 self.load_claims(cx);
@@ -408,7 +412,7 @@ impl Workspace {
         });
         self.document = Document::untitled();
         self.set_dirty(false);
-        self.revision += 1;
+        self.document_changed(cx);
         self.continuous_baseline(cx);
         cx.notify();
     }
@@ -465,7 +469,7 @@ impl Workspace {
         self.continuous_baseline(cx);
         self.reset_review(cx);
         self.set_dirty(false);
-        self.revision += 1;
+        self.document_changed(cx);
         window.set_window_title(&self.title());
         cx.notify();
     }
@@ -627,7 +631,13 @@ impl Workspace {
         self.mode = mode;
         match mode {
             ViewMode::Raw => self.editor.update(cx, |state, cx| state.focus(window, cx)),
-            ViewMode::Preview => window.focus(&self.focus_handle, cx),
+            ViewMode::Preview => {
+                // Open the preview where the writing was going on.
+                let cursor = self.editor.read(cx).selected_range().start;
+                let line = line_at(&self.text(cx), cursor);
+                self.reveal_in_preview(line, cx);
+                window.focus(&self.focus_handle, cx)
+            }
         }
         cx.notify();
     }
@@ -693,41 +703,7 @@ impl Workspace {
     fn render_document(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         match self.mode {
             ViewMode::Raw => self.render_raw_editor(window, cx),
-            ViewMode::Preview => {
-                let text = self.text(cx);
-                let (front_matter, body) = split_front_matter(&text);
-                let front_matter = front_matter
-                    .filter(|f| !f.trim().is_empty())
-                    .map(|f| render_front_matter(f, cx));
-                let body = body.to_string();
-                div()
-                    .id("preview-scroll")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .child(
-                        h_flex().w_full().justify_center().child(
-                            div()
-                                .w_full()
-                                .max_w(px(PREVIEW_MAX_WIDTH))
-                                .px_8()
-                                .py_8()
-                                .when_some(self.settings.preview_font.clone(), |d, font| {
-                                    d.font_family(font)
-                                })
-                                .children(front_matter)
-                                .child(
-                                    TextView::markdown(
-                                        ElementId::Name(
-                                            format!("preview-{}", self.revision).into(),
-                                        ),
-                                        body,
-                                    )
-                                    .selectable(true),
-                                ),
-                        ),
-                    )
-                    .into_any_element()
-            }
+            ViewMode::Preview => self.render_preview(cx),
         }
     }
 
@@ -903,25 +879,10 @@ impl Render for Workspace {
     }
 }
 
-/// Front matter in the preview: a small, muted block of its lines, so the
-/// post's metadata is visible without reading as part of the post.
-fn render_front_matter(front_matter: &str, cx: &App) -> AnyElement {
-    let theme = cx.theme();
-    v_flex()
-        .id("preview-front-matter")
-        .test_support()
-        .mb_6()
-        .px_3()
-        .py_2()
-        .rounded_md()
-        .bg(theme.muted)
-        .text_xs()
-        .text_color(theme.muted_foreground)
-        .font_family(theme.mono_font_family.clone())
-        .children(
-            front_matter
-                .lines()
-                .map(|line| div().child(SharedString::from(line.to_string()))),
-        )
-        .into_any_element()
+/// The line `offset` is on, without its line break.
+fn line_at(text: &str, offset: usize) -> std::ops::Range<usize> {
+    let offset = offset.min(text.len());
+    let start = text[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let end = text[offset..].find('\n').map_or(text.len(), |i| offset + i);
+    start..end
 }
