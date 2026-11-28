@@ -4,6 +4,7 @@
 use gpui_kit::{TestAppContext, px};
 
 use super::*;
+use crate::preview::Align;
 
 /// Enough paragraphs to fill the window several times over.
 fn long_document() -> &'static str {
@@ -107,14 +108,18 @@ fn the_preview_scrolls_to_a_place_in_the_source(cx: &mut TestAppContext) {
     assert_eq!(h.read(cx, |ws, _| ws.preview_scrolled()), px(0.));
 
     let far = range_of(text, "Paragraph number 250 ");
-    h.update(cx, |ws, _, cx| ws.reveal_in_preview(far, cx));
+    h.update(cx, |ws, _, cx| {
+        ws.reveal_in_preview(far, Align::Nearest, cx)
+    });
     settle(&h, cx);
     let down = h.read(cx, |ws, _| ws.preview_scrolled());
     assert!(down > px(1000.), "scrolled {down:?}");
 
     // And back up, no further than it takes to see the place.
     let near = range_of(text, "Paragraph number 100 ");
-    h.update(cx, |ws, _, cx| ws.reveal_in_preview(near, cx));
+    h.update(cx, |ws, _, cx| {
+        ws.reveal_in_preview(near, Align::Nearest, cx)
+    });
     settle(&h, cx);
     let up = h.read(cx, |ws, _| ws.preview_scrolled());
     assert!(px(0.) < up && up < down, "scrolled {up:?} after {down:?}");
@@ -142,4 +147,74 @@ fn the_preview_opens_where_the_cursor_is(cx: &mut TestAppContext) {
     h.click(cx, "mode-preview");
     settle(&h, cx);
     assert_eq!(h.read(cx, |ws, _| ws.preview_scrolled()), px(0.));
+}
+
+/// A long document that cites one footnote near its top, and again further
+/// down, with the footnote at its end.
+fn footnoted_document() -> &'static str {
+    let mut text = String::from("An opening claim.[^Source] And one with none.[^missing]\n\n");
+    text.push_str(long_document());
+    text.push_str("Cited again here.[^source]\n\n");
+    text.push_str(long_document());
+    text.push_str("[^source]: Where the *claim* comes from.\n");
+    text.leak()
+}
+
+#[gpui_kit::test]
+fn a_footnote_reference_jumps_to_its_footnote_and_back(cx: &mut TestAppContext) {
+    let text = footnoted_document();
+    let h = open(
+        cx,
+        Setup {
+            text,
+            ..Default::default()
+        },
+    );
+    h.click(cx, "mode-preview");
+    settle(&h, cx);
+    assert_eq!(h.read(cx, |ws, _| ws.preview_scrolled()), px(0.));
+
+    h.click(cx, "footnote-reference-source-0");
+    settle(&h, cx);
+    let at_footnote = h.read(cx, |ws, _| ws.preview_scrolled());
+    assert!(at_footnote > px(5000.), "scrolled {at_footnote:?}");
+
+    // The footnote has a way back to each place that cites it.
+    assert!(h.exists(cx, "footnote-back-source-0"));
+    assert!(h.exists(cx, "footnote-back-source-1"));
+    assert!(!h.exists(cx, "footnote-back-source-2"));
+    h.click(cx, "footnote-back-source-1");
+    settle(&h, cx);
+    let at_second = h.read(cx, |ws, _| ws.preview_scrolled());
+    assert!(
+        px(1000.) < at_second && at_second < at_footnote,
+        "scrolled {at_second:?} after {at_footnote:?}"
+    );
+
+    h.click(cx, "footnote-reference-source-1");
+    settle(&h, cx);
+    h.click(cx, "footnote-back-source-0");
+    settle(&h, cx);
+    assert_eq!(h.read(cx, |ws, _| ws.preview_scrolled()), px(0.));
+}
+
+#[gpui_kit::test]
+fn a_reference_without_a_footnote_is_plain_text(cx: &mut TestAppContext) {
+    let h = open(
+        cx,
+        Setup {
+            text: footnoted_document(),
+            ..Default::default()
+        },
+    );
+    h.click(cx, "mode-preview");
+    settle(&h, cx);
+    assert!(h.exists(cx, "footnote-reference-source-0"));
+    assert!(!h.exists(cx, "footnote-reference-missing-0"));
+    let rendered = h.read(cx, |ws, cx| ws.preview_text(cx));
+    assert!(
+        rendered.contains("And one with none.[^missing]"),
+        "{:?}",
+        &rendered[..80]
+    );
 }

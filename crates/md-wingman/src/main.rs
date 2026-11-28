@@ -9,6 +9,7 @@ mod continuous;
 mod dictation;
 mod document;
 mod findings;
+mod footnotes;
 mod format;
 mod guide;
 mod jev;
