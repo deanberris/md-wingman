@@ -5,18 +5,33 @@
 //! finding's quote) can be addressed by where they are in the source, and
 //! scrolled to.
 
+use std::cell::Cell;
 use std::ops::Range;
+use std::rc::Rc;
 
-use gpui_kit::component::text::{RenderedText, TextView, TextViewState};
+use gpui_kit::component::text::{MarkdownExtensions, RenderedText, TextView, TextViewState};
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::document::split_front_matter;
+use crate::footnotes::{self, FootnotePlugin, Mark, ReferencePlugin};
 use crate::workspace::{ViewMode, Workspace};
 
 /// Comfortable line length for reading the preview.
 const PREVIEW_MAX_WIDTH: f32 = 720.;
+
+/// Where a place scrolled to ends up in the pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Align {
+    /// Scroll just far enough to see it.
+    Nearest,
+    /// Put it near the top, as following a link does.
+    Top,
+}
+
+/// The gap left above a place scrolled to the top.
+const TOP_GAP: f32 = 24.;
 
 pub struct Preview {
     state: Entity<TextViewState>,
@@ -28,6 +43,11 @@ pub struct Preview {
     /// A place in the document to scroll to once the view has parsed the
     /// text it is in.
     pending_reveal: Option<Range<usize>>,
+    /// How the scroll under way lines its place up.
+    align: Rc<Cell<Align>>,
+    /// The footnote references and footnotes in the body, by where they
+    /// are in it.
+    footnotes: Vec<Mark>,
     _observe: Subscription,
 }
 
@@ -42,6 +62,8 @@ impl Preview {
             scroll: ScrollHandle::new(),
             body_start: 0,
             pending_reveal: None,
+            align: Rc::new(Cell::new(Align::Nearest)),
+            footnotes: Vec::new(),
             _observe: observe,
         }
     }
@@ -52,6 +74,18 @@ impl Preview {
         let rendered = self.state.read(cx).rendered_text();
         (rendered.source() == body).then_some(rendered)
     }
+
+    /// How many places cite the footnote labelled `label`.
+    pub(crate) fn citation_count(&self, label: &str) -> usize {
+        footnotes::citations(&self.footnotes, label).count()
+    }
+
+    /// Which of the citations of `label` starts at `start` in the body.
+    pub(crate) fn citation_index(&self, label: &str, start: usize) -> usize {
+        footnotes::citations(&self.footnotes, label)
+            .position(|range| range.start == start)
+            .unwrap_or(0)
+    }
 }
 
 impl Workspace {
@@ -61,6 +95,7 @@ impl Workspace {
         let text = self.text(cx);
         let (_, body) = split_front_matter(&text);
         self.preview.body_start = text.len() - body.len();
+        self.preview.footnotes = footnotes::marks(body);
         self.preview
             .state
             .update(cx, |state, cx| state.set_text(body, cx));
@@ -81,10 +116,16 @@ impl Workspace {
     /// Scrolls the preview to a range of the document, when the preview is
     /// showing. If the preview is still parsing an edit, it scrolls once
     /// that lands.
-    pub(crate) fn reveal_in_preview(&mut self, source: Range<usize>, cx: &mut Context<Self>) {
+    pub(crate) fn reveal_in_preview(
+        &mut self,
+        source: Range<usize>,
+        align: Align,
+        cx: &mut Context<Self>,
+    ) {
         if self.mode != ViewMode::Preview {
             return;
         }
+        self.preview.align.set(align);
         self.sync_preview(cx);
         if self.starts_the_body(&source, cx) {
             // The first thing in the document: show what's above it too
@@ -98,8 +139,8 @@ impl Workspace {
         self.flush_preview_reveal(cx);
     }
 
-    /// Whether nothing is rendered before `source`: it is in the front
-    /// matter, or starts the first block after it.
+    /// Whether nothing is rendered above `source`: it is in the front
+    /// matter, or on the first line of text after it.
     fn starts_the_body(&self, source: &Range<usize>, cx: &App) -> bool {
         let text = self.text(cx);
         let start = self.preview.body_start;
@@ -108,6 +149,35 @@ impl Workspace {
         };
         let first = start + (body.len() - body.trim_start().len());
         source.start <= first
+            || text
+                .get(first..source.start)
+                .is_some_and(|before| !before.contains('\n'))
+    }
+
+    /// Scrolls the preview to the footnote labelled `label`.
+    pub(crate) fn go_to_footnote(&mut self, label: &str, cx: &mut Context<Self>) {
+        let Some(range) = footnotes::definition(&self.preview.footnotes, label) else {
+            return;
+        };
+        // The view can't scroll to a block a plugin draws, so scroll the
+        // end of the text before the footnote to the top: the footnote is
+        // then the next thing down.
+        let text = self.text(cx);
+        let start = self.preview.body_start;
+        let before = text[start..start + range.start].trim_end();
+        let last = before.chars().next_back().map_or(0, char::len_utf8);
+        let end = start + before.len();
+        self.reveal_in_preview(end - last..end, Align::Top, cx);
+    }
+
+    /// Scrolls the preview to the `nth` place that cites the footnote
+    /// labelled `label`.
+    pub(crate) fn go_to_citation(&mut self, label: &str, nth: usize, cx: &mut Context<Self>) {
+        let Some(range) = footnotes::citations(&self.preview.footnotes, label).nth(nth) else {
+            return;
+        };
+        let start = self.preview.body_start;
+        self.reveal_in_preview(start + range.start..start + range.end, Align::Top, cx);
     }
 
     fn flush_preview_reveal(&mut self, cx: &mut Context<Self>) {
@@ -153,18 +223,29 @@ impl Workspace {
             .filter(|f| !f.trim().is_empty())
             .map(|f| render_front_matter(f, cx));
         let scroll = self.preview.scroll.clone();
-        let view = TextView::new(&self.preview.state).on_reveal(move |line, _, _| {
-            // The pane is a plain scrolling div, so bring the line into it
-            // here: just far enough to see it.
-            let viewport = scroll.bounds();
-            let mut offset = scroll.offset();
-            if line.top() < viewport.top() {
-                offset.y += viewport.top() - line.top();
-            } else if line.bottom() > viewport.bottom() {
-                offset.y -= line.bottom() - viewport.bottom();
-            }
-            scroll.set_offset(offset);
-        });
+        let align = self.preview.align.clone();
+        let extensions = MarkdownExtensions::default()
+            .plugin(ReferencePlugin(cx.weak_entity()))
+            .plugin(FootnotePlugin(cx.weak_entity()));
+        let view = TextView::new(&self.preview.state)
+            .markdown_extensions(extensions)
+            .on_reveal(move |line, _, _| {
+                // The pane is a plain scrolling div, so bring the line into it
+                // here.
+                let viewport = scroll.bounds();
+                let mut offset = scroll.offset();
+                let top = viewport.top() + px(TOP_GAP);
+                if align.get() == Align::Top {
+                    offset.y += top - line.top();
+                } else if line.top() < viewport.top() {
+                    offset.y += viewport.top() - line.top();
+                } else if line.bottom() > viewport.bottom() {
+                    offset.y -= line.bottom() - viewport.bottom();
+                }
+                // No further than the pane scrolls.
+                offset.y = offset.y.clamp(-scroll.max_offset().y, px(0.));
+                scroll.set_offset(offset);
+            });
         div()
             .id("preview-scroll")
             .size_full()

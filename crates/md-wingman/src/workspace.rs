@@ -635,7 +635,7 @@ impl Workspace {
                 // Open the preview where the writing was going on.
                 let cursor = self.editor.read(cx).selected_range().start;
                 let line = line_at(&self.text(cx), cursor);
-                self.reveal_in_preview(line, cx);
+                self.reveal_in_preview(line, crate::preview::Align::Nearest, cx);
                 window.focus(&self.focus_handle, cx)
             }
         }
