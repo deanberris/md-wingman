@@ -14,6 +14,7 @@ mod guide;
 mod jev;
 mod logging;
 mod prefilter;
+mod preview;
 mod provider;
 mod quit;
 mod reflow;

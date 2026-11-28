@@ -13,6 +13,7 @@ mod contract;
 mod findings;
 mod format;
 mod guide;
+mod preview;
 mod provider;
 mod quit;
 mod review;
